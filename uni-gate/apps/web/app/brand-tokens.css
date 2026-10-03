@@ -1,0 +1,106 @@
+/*
+  UNI GATE brand tokens — source of truth for every product UI.
+  Copied from UNI GATE Money Exchange Brand_Tokens.html.
+  Copy this file into other UNI GATE systems. Do not put screen layout here.
+
+  Identity hexes stay raw. Canvas / paper / chrome are derived so screens
+  do not fill 100% with a single brand color.
+*/
+:root,
+[data-theme="dark"] {
+  --brand-forest: #13362F;
+  --brand-forest-rgb: 19, 54, 47;
+  --brand-sand: #DECFB0;
+  --brand-sand-rgb: 222, 207, 176;
+  --brand-slate: #7D9BA1;
+  --brand-slate-rgb: 125, 155, 161;
+
+  /* Canvas darker than forest so cards and chrome lift */
+  --bg-base: #0A1C18;
+  --bg-color: #0A1C18;
+  --bg-secondary: #0D241F;
+  --bg-surface: #13362F;
+  --surface-color: #13362F;
+  --surface-hover: #1A433B;
+  --bg-surface-hover: #1A433B;
+  --border-color: rgba(125, 155, 161, 0.32);
+
+  --chrome-bg: #13362F;
+  --chrome-bg-end: #0E2A25;
+  --chrome-text: #DECFB0;
+  --chrome-muted: #B5C4B8;
+  --chrome-hover: rgba(222, 207, 176, 0.12);
+  --chrome-active: rgba(222, 207, 176, 0.22);
+
+  --text-primary: #E8DCC4;
+  --text-secondary: #D4C9A8;
+  --text-muted: #B5C4B8;
+  --text-on-primary: #13362F;
+
+  --primary-color: #DECFB0;
+  --primary-hover: #E8DCC4;
+  --primary-glow: rgba(222, 207, 176, 0.28);
+  --accent-green: #DECFB0;
+  --accent-green-hover: #E8DCC4;
+  --accent-green-rgb: 222, 207, 176;
+  --accent-soft: rgba(222, 207, 176, 0.14);
+  --accent-soft-strong: rgba(222, 207, 176, 0.22);
+
+  --accent-blue: #7D9BA1;
+  --info-color: #7D9BA1;
+  --accent-red: #C45C4A;
+  --danger-color: #C45C4A;
+  --accent-gold: #C4A35A;
+  --warning-color: #C4A35A;
+  --success-color: #DECFB0;
+
+  --sidebar-width: 240px;
+  --border-radius: 12px;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+  /* Canvas lighter than brand sand; cards are paper */
+  --bg-base: #F3EBDA;
+  --bg-color: #F3EBDA;
+  --bg-secondary: #EBE1C9;
+  --bg-surface: #FFFBF3;
+  --surface-color: #FFFBF3;
+  --surface-hover: #F0E6D0;
+  --bg-surface-hover: #F0E6D0;
+  --border-color: rgba(19, 54, 47, 0.16);
+
+  --chrome-bg: #13362F;
+  --chrome-bg-end: #0E2A25;
+  --chrome-text: #DECFB0;
+  --chrome-muted: #B5C4B8;
+  --chrome-hover: rgba(222, 207, 176, 0.12);
+  --chrome-active: rgba(222, 207, 176, 0.22);
+
+  --text-primary: #13362F;
+  --text-secondary: #2A4A44;
+  --text-muted: #4F6B68;
+  --text-on-primary: #DECFB0;
+
+  --primary-color: #13362F;
+  --primary-hover: #1C4A40;
+  --primary-glow: rgba(19, 54, 47, 0.22);
+  --accent-green: #13362F;
+  --accent-green-hover: #1C4A40;
+  --accent-green-rgb: 19, 54, 47;
+  --accent-soft: rgba(19, 54, 47, 0.08);
+  --accent-soft-strong: rgba(19, 54, 47, 0.14);
+
+  --accent-blue: #7D9BA1;
+  --info-color: #5F7E84;
+  --accent-red: #A8483A;
+  --danger-color: #A8483A;
+  --accent-gold: #A8843A;
+  --warning-color: #A8843A;
+  --success-color: #13362F;
+
+  --shadow: 0 8px 28px rgba(19, 54, 47, 0.12);
+  --shadow-sm: 0 2px 8px rgba(19, 54, 47, 0.08);
+}

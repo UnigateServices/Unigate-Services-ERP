@@ -1,0 +1,17 @@
+{
+  "name": "uni-gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unigate Services ERP foundation",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @unigate/web",
+    "build:web": "npm run build -w @unigate/web",
+    "typecheck:web": "npm run typecheck -w @unigate/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
