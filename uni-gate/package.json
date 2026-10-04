@@ -4,12 +4,20 @@
   "private": true,
   "description": "Unigate Services ERP foundation",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev:web": "npm run dev -w @unigate/web",
+    "dev:api": "npm run start:dev -w @unigate/api",
     "build:web": "npm run build -w @unigate/web",
-    "typecheck:web": "npm run typecheck -w @unigate/web"
+    "build:api": "npm run build -w @unigate/shared && npm run build -w @unigate/database && npm run build -w @unigate/api",
+    "typecheck:web": "npm run typecheck -w @unigate/web",
+    "typecheck:api": "npm run typecheck -w @unigate/api",
+    "test:api": "npm run test -w @unigate/api",
+    "db:generate": "npm run generate -w @unigate/database",
+    "db:migrate": "npm run migrate:dev -w @unigate/database",
+    "postinstall": "npm run generate -w @unigate/database --if-present"
   },
   "engines": {
     "node": ">=20"

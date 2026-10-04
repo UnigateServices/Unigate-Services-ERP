@@ -1,0 +1,216 @@
+// Unigate foundation. This is not the TRADIVIA finance schema.
+//
+// Login names
+// - Platform operator username is User.username. It is required for kind PLATFORM
+//   and forbidden for kind MEMBER (see the CHECK constraint in the foundation migration).
+//   Uniqueness is a partial index on lower(username) WHERE kind = 'PLATFORM'.
+// - Customer username is Membership.username. Uniqueness is (company_id, lower(username)),
+//   so the same name may exist in another company.
+// - A platform username and a customer username are different columns. They may match
+//   as text without being the same account.
+//
+// Subscription
+// - Company.status SUSPENDED means a person suspended the company. It is not set
+//   automatically when the date passes.
+// - expiresOn is the last valid calendar day in Asia/Damascus. The day itself still
+//   allows member access. The next calendar day is SUBSCRIPTION_EXPIRED at login time.
+//   That result is computed. It is not a status value.
+//
+// Modules
+// - CompanyModule.enabled is the tenant switch.
+// - Whether a module is implemented (ready) lives in application code, not in this table.
+//
+// Sessions
+// - User.authVersion increments when the password changes or an administrator resets it.
+//   A signed session carries that version and is rejected when it is older.
+//   Role and permission checks still read the current role row. They are not frozen
+//   inside authVersion.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserKind {
+  PLATFORM
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VisibilityScope {
+  OWN
+  BRANCH
+  ALL_BRANCHES
+}
+
+enum ModuleKey {
+  finance
+  exchange
+  gold
+  aviation
+  engineering
+  hr
+}
+
+enum AuditAction {
+  ENTER
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model User {
+  id               String     @id @default(cuid())
+  kind             UserKind
+  /// Platform login name. Null for every MEMBER. See schema header.
+  username         String?
+  passwordHash     String     @map("password_hash")
+  email            String?
+  phone            String?
+  status           UserStatus @default(ACTIVE)
+  /// Bumped on password change or administrator reset. Carried by the signed session.
+  authVersion      Int        @default(1) @map("auth_version")
+  failedLoginCount Int        @default(0) @map("failed_login_count")
+  lockedUntil      DateTime?  @map("locked_until")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  membership   Membership?
+  auditEntries AuditEntry[]
+
+  /// Platform login names are unique per kind. MEMBER rows keep username null,
+  /// and PostgreSQL allows many nulls in this unique key.
+  @@unique([kind, username])
+  @@index([kind])
+  @@map("users")
+}
+
+model Company {
+  id        String        @id @default(cuid())
+  name      String
+  code      String        @unique
+  /// Manual suspension. Independent from expiresOn.
+  status    CompanyStatus @default(ACTIVE)
+  priceUsd  Decimal       @map("price_usd") @db.Decimal(12, 2)
+  /// Last valid calendar day in Asia/Damascus.
+  expiresOn DateTime      @map("expires_on") @db.Date
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  locations   Location[]
+  roles       Role[]
+  memberships Membership[]
+  modules     CompanyModule[]
+  auditEntries AuditEntry[]
+
+  @@map("companies")
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  memberships Membership[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("locations")
+}
+
+model Role {
+  id                     String          @id @default(cuid())
+  companyId              String          @map("company_id")
+  key                    String
+  name                   String
+  canManageUsers         Boolean         @default(false) @map("can_manage_users")
+  visibilityScope        VisibilityScope @map("visibility_scope")
+  editRequiresApproval   Boolean         @default(false) @map("edit_requires_approval")
+  deleteRequiresApproval Boolean         @default(false) @map("delete_requires_approval")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  memberships Membership[]
+
+  @@unique([companyId, key])
+  @@index([companyId])
+  @@map("roles")
+}
+
+model Membership {
+  id         String   @id @default(cuid())
+  userId     String   @unique @map("user_id")
+  companyId  String   @map("company_id")
+  /// Customer login name. Unique inside this company only.
+  username   String
+  roleId     String   @map("role_id")
+  locationId String?  @map("location_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  company  Company   @relation(fields: [companyId], references: [id])
+  role     Role      @relation(fields: [roleId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([companyId, username])
+  @@index([companyId])
+  @@index([roleId])
+  @@index([locationId])
+  @@map("memberships")
+}
+
+model CompanyModule {
+  id        String    @id @default(cuid())
+  companyId String    @map("company_id")
+  moduleKey ModuleKey @map("module_key")
+  enabled   Boolean   @default(false)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, moduleKey])
+  @@index([companyId])
+  @@map("company_modules")
+}
+
+model AuditEntry {
+  id          String      @id @default(cuid())
+  actorUserId String      @map("actor_user_id")
+  companyId   String      @map("company_id")
+  action      AuditAction
+  targetType  String      @map("target_type")
+  targetId    String      @map("target_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  actor   User    @relation(fields: [actorUserId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([actorUserId])
+  @@map("audit_entries")
+}
