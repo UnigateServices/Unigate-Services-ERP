@@ -25,6 +25,16 @@
 //   A signed session carries that version and is rejected when it is older.
 //   Role and permission checks still read the current role row. They are not frozen
 //   inside authVersion.
+//
+// Company integrity
+// - Role and Location keep their primary key on id, and also a unique (companyId, id).
+//   That extra key lets Membership name the company in the foreign key.
+// - Membership (companyId, roleId) references Role (companyId, id).
+// - Membership (companyId, locationId) references Location (companyId, id).
+//   locationId null is all-branch access. PostgreSQL does not check that foreign
+//   key when locationId is null.
+// - A referenced location is not set null on delete. Branches are deactivated.
+//   ON DELETE SET NULL on the composite key would also clear companyId.
 
 generator client {
   provider = "prisma-client-js"
@@ -136,6 +146,7 @@ model Location {
   memberships Membership[]
 
   @@unique([companyId, name])
+  @@unique([companyId, id])
   @@index([companyId])
   @@map("locations")
 }
@@ -156,6 +167,7 @@ model Role {
   memberships Membership[]
 
   @@unique([companyId, key])
+  @@unique([companyId, id])
   @@index([companyId])
   @@map("roles")
 }
@@ -173,8 +185,8 @@ model Membership {
 
   user     User      @relation(fields: [userId], references: [id])
   company  Company   @relation(fields: [companyId], references: [id])
-  role     Role      @relation(fields: [roleId], references: [id])
-  location Location? @relation(fields: [locationId], references: [id])
+  role     Role      @relation(fields: [companyId, roleId], references: [companyId, id])
+  location Location? @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
 
   @@unique([companyId, username])
   @@index([companyId])

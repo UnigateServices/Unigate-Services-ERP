@@ -16,7 +16,8 @@ INSERT INTO users (id, kind, username, password_hash, status, updated_at) VALUES
   ('usr_op1', 'PLATFORM', 'operator', 'hash', 'ACTIVE', NOW()),
   ('usr_m1', 'MEMBER', NULL, 'hash', 'ACTIVE', NOW()),
   ('usr_m2', 'MEMBER', NULL, 'hash', 'ACTIVE', NOW()),
-  ('usr_m3', 'MEMBER', NULL, 'hash', 'ACTIVE', NOW());
+  ('usr_m3', 'MEMBER', NULL, 'hash', 'ACTIVE', NOW()),
+  ('usr_m5', 'MEMBER', NULL, 'hash', 'ACTIVE', NOW());
 
 INSERT INTO memberships (id, user_id, company_id, username, role_id, location_id, updated_at) VALUES
   ('mem_a', 'usr_m1', 'co_a', 'owner', 'role_a', 'loc_a', NOW());
@@ -132,9 +133,30 @@ SELECT pg_temp.expect_sqlstate(
 );
 
 SELECT pg_temp.expect_sqlstate(
-  'cross-company role assignment is not blocked by the current foreign keys',
+  'cross-company role assignment is rejected',
   $sql$INSERT INTO memberships (id, user_id, company_id, username, role_id, updated_at)
        VALUES ('mem_cross_role', 'usr_m3', 'co_a', 'crossrole', 'role_b', NOW())$sql$,
+  '23503'
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'cross-company location assignment is rejected',
+  $sql$INSERT INTO memberships (id, user_id, company_id, username, role_id, location_id, updated_at)
+       VALUES ('mem_cross_loc', 'usr_m3', 'co_a', 'crossloc', 'role_a', 'loc_b', NOW())$sql$,
+  '23503'
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'same-company role and location are accepted',
+  $sql$INSERT INTO memberships (id, user_id, company_id, username, role_id, location_id, updated_at)
+       VALUES ('mem_same', 'usr_m3', 'co_a', 'same', 'role_a', 'loc_a', NOW())$sql$,
+  NULL
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'null location_id is accepted for all-branch access',
+  $sql$INSERT INTO memberships (id, user_id, company_id, username, role_id, updated_at)
+       VALUES ('mem_all', 'usr_m5', 'co_a', 'allbranches', 'role_a', NOW())$sql$,
   NULL
 );
 
@@ -146,10 +168,49 @@ WHERE indexname IN (
   'companies_code_lower_key',
   'memberships_company_id_username_key',
   'memberships_user_id_key',
-  'companies_code_key'
+  'companies_code_key',
+  'roles_company_id_id_key',
+  'locations_company_id_id_key'
 )
 ORDER BY indexname;
 
 SELECT conname
 FROM pg_constraint
-WHERE conname = 'users_username_by_kind_check';
+WHERE conname IN (
+  'users_username_by_kind_check',
+  'roles_company_id_id_key',
+  'locations_company_id_id_key',
+  'memberships_company_id_role_id_fkey',
+  'memberships_company_id_location_id_fkey',
+  'memberships_role_id_fkey',
+  'memberships_location_id_fkey'
+)
+ORDER BY conname;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname IN ('memberships_role_id_fkey', 'memberships_location_id_fkey')
+  ) THEN
+    RAISE EXCEPTION 'old single-column membership foreign keys are still present';
+  END IF;
+
+  IF (
+    SELECT count(*) FROM pg_constraint
+    WHERE conname IN (
+      'users_username_by_kind_check',
+      'memberships_company_id_role_id_fkey',
+      'memberships_company_id_location_id_fkey'
+    )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'company integrity foreign keys are missing';
+  END IF;
+
+  IF (
+    SELECT count(*) FROM pg_indexes
+    WHERE indexname IN ('roles_company_id_id_key', 'locations_company_id_id_key')
+  ) <> 2 THEN
+    RAISE EXCEPTION 'company identity unique indexes are missing';
+  END IF;
+END $$;
