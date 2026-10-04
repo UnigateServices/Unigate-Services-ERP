@@ -28,6 +28,29 @@ function writeBook(book: AttemptBook) {
   window.localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(book));
 }
 
+const PASS_KEY = 'ug_platform_password_overrides';
+
+function readOverrides(): Record<string, string> {
+  const raw = window.localStorage.getItem(PASS_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function storedPlatformPassword(operator: { id: string; password: string }) {
+  return readOverrides()[operator.id] ?? operator.password;
+}
+
+export function setPlatformPassword(operatorId: string, password: string) {
+  const overrides = readOverrides();
+  overrides[operatorId] = password;
+  window.localStorage.setItem(PASS_KEY, JSON.stringify(overrides));
+}
+
 export function loginPlatform(username: string, password: string): PlatformLoginResult {
   const key = normalizeName(username);
   if (key === NETWORK_FIXTURE_NAME) {
@@ -45,7 +68,7 @@ export function loginPlatform(username: string, password: string): PlatformLogin
   }
 
   const operator = PLATFORM_OPERATORS.find((item) => normalizeName(item.name) === key);
-  const passwordMatches = operator?.password === password;
+  const passwordMatches = operator ? storedPlatformPassword(operator) === password : false;
 
   if (!operator || !passwordMatches) {
     current.count += 1;

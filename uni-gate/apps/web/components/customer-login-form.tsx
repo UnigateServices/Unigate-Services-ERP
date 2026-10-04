@@ -8,33 +8,34 @@ import { InlineAlert } from '@/components/inline-alert';
 import { PasswordField } from '@/components/password-field';
 import { PrimaryButton } from '@/components/primary-button';
 import { usePreferences } from '@/lib/preferences';
-import { readSession, writePlatformSession } from '@/lib/session';
-import { loginPlatform } from '@/services/platform-auth';
+import { readSession } from '@/lib/session';
+import { loginCustomer } from '@/services/customer-auth';
 import type { LoginFailureCode } from '@/types/auth';
 
-export function PlatformLoginForm() {
+export function CustomerLoginForm() {
   const router = useRouter();
   const { messages } = usePreferences();
+  const [code, setCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [codeMissing, setCodeMissing] = useState(false);
   const [usernameMissing, setUsernameMissing] = useState(false);
   const [passwordMissing, setPasswordMissing] = useState(false);
   const [formCode, setFormCode] = useState<LoginFailureCode | 'network' | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const alertRef = useRef<HTMLDivElement>(null);
-  const usernameRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const current = readSession();
-    if (current?.actor === 'platform') {
-      router.replace(current.companyId ? '/app' : '/platform');
+    const session = readSession();
+    if (session?.actor === 'member') {
+      router.replace('/app');
       return;
     }
     setChecking(false);
   }, [router]);
 
+  const codeError = codeMissing ? messages.required : '';
   const usernameError = usernameMissing ? messages.required : '';
   const passwordError = passwordMissing ? messages.required : '';
   const formError =
@@ -44,9 +45,13 @@ export function PlatformLoginForm() {
         ? messages.inactive
         : formCode === 'LOCKED'
           ? messages.locked
-          : formCode === 'WRONG_CREDENTIALS'
-            ? messages.wrongCredentials
-            : '';
+          : formCode === 'COMPANY_SUSPENDED'
+            ? messages.companySuspended
+            : formCode === 'SUBSCRIPTION_EXPIRED'
+              ? messages.subscriptionExpired
+              : formCode === 'WRONG_CREDENTIALS'
+                ? messages.wrongCredentials
+                : '';
 
   useEffect(() => {
     if (formError) alertRef.current?.focus();
@@ -54,30 +59,23 @@ export function PlatformLoginForm() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextUsernameMissing = !username.trim();
-    const nextPasswordMissing = !password;
-    setUsernameMissing(nextUsernameMissing);
-    setPasswordMissing(nextPasswordMissing);
+    const missingCode = !code.trim();
+    const missingName = !username.trim();
+    const missingPassword = !password;
+    setCodeMissing(missingCode);
+    setUsernameMissing(missingName);
+    setPasswordMissing(missingPassword);
     setFormCode('');
-    if (nextUsernameMissing) {
-      usernameRef.current?.focus();
-      return;
-    }
-    if (nextPasswordMissing) {
-      passwordRef.current?.focus();
-      return;
-    }
-
+    if (missingCode || missingName || missingPassword) return;
     setSubmitting(true);
     try {
-      const result = loginPlatform(username, password);
+      const result = loginCustomer(code, username, password);
       if (!result.ok) {
         setFormCode(result.code);
         if (result.code === 'WRONG_CREDENTIALS') setPassword('');
         return;
       }
-      writePlatformSession(result.operator);
-      router.push('/platform');
+      router.push('/app');
     } catch {
       setFormCode('network');
     } finally {
@@ -86,18 +84,27 @@ export function PlatformLoginForm() {
   }
 
   return (
-    <AuthLayout eyebrow={messages.platformEyebrow} title={messages.operatorSignIn}>
+    <AuthLayout eyebrow={messages.companyContext} title={messages.companySignIn}>
       {checking ? (
         <p role="status">{messages.checking}</p>
       ) : (
         <form className="auth-form" onSubmit={onSubmit} noValidate>
-          <FormField id="username" label={messages.username} error={usernameError}>
+          <FormField id="company-code" label={messages.companyCode} required hint={messages.companyCodeHint} error={codeError}>
             <input
-              ref={usernameRef}
+              id="company-code"
+              value={code}
+              autoComplete="organization"
+              disabled={submitting}
+              aria-invalid={codeError ? true : undefined}
+              aria-describedby={fieldDescribedBy('company-code', codeError, messages.companyCodeHint)}
+              onChange={(event) => setCode(event.target.value.toLowerCase())}
+            />
+          </FormField>
+          <FormField id="username" label={messages.username} required error={usernameError}>
+            <input
               id="username"
-              name="username"
-              autoComplete="username"
               value={username}
+              autoComplete="username"
               disabled={submitting}
               aria-invalid={usernameError ? true : undefined}
               aria-describedby={fieldDescribedBy('username', usernameError)}
@@ -110,13 +117,10 @@ export function PlatformLoginForm() {
             value={password}
             error={passwordError}
             disabled={submitting}
-            inputRef={passwordRef}
             onChange={setPassword}
           />
           {formError ? <InlineAlert alertRef={alertRef} message={formError} /> : null}
-          <PrimaryButton disabled={submitting}>
-            {submitting ? messages.submitting : messages.submit}
-          </PrimaryButton>
+          <PrimaryButton disabled={submitting}>{submitting ? messages.submitting : messages.submit}</PrimaryButton>
         </form>
       )}
     </AuthLayout>
