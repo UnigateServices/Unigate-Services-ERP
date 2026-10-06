@@ -46,7 +46,7 @@ function readBody(body: string | object, status: number): ErrorBody {
 
 function codeForStatus(status: number): string {
   if (status === HttpStatus.BAD_REQUEST) return ErrorCode.VALIDATION_ERROR;
-  if (status === HttpStatus.UNAUTHORIZED) return ErrorCode.WRONG_CREDENTIALS;
+  if (status === HttpStatus.UNAUTHORIZED) return ErrorCode.UNAUTHORIZED;
   if (status === HttpStatus.FORBIDDEN) return ErrorCode.FORBIDDEN;
   if (status === HttpStatus.NOT_FOUND) return ErrorCode.NOT_FOUND;
   if (status === HttpStatus.CONFLICT) return ErrorCode.CONFLICT;

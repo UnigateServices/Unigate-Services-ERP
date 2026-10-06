@@ -21,9 +21,7 @@ import {
   visibleLocations,
 } from '@/lib/permissions';
 import { usePreferences } from '@/lib/preferences';
-import { readSession } from '@/lib/session';
-import { PLATFORM_OPERATORS } from '@/mocks/platform-operators';
-import { setPlatformPassword, storedPlatformPassword } from '@/services/platform-auth';
+import { changeOwnPassword, forgetSupportCompany, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
 import {
   createLocation,
@@ -38,7 +36,6 @@ import {
   listRoles,
   listUsers,
   passwordIssue,
-  readUserPassword,
   resetUserPassword,
   roleKeyIssue,
   updateLocation,
@@ -803,12 +800,18 @@ export function AccountScreen() {
   const items = useAppItems(session, session?.companyId ?? null);
 
   useEffect(() => {
-    const currentSession = readSession();
-    if (!currentSession) {
-      router.replace('/login/platform');
-      return;
-    }
-    setSession(currentSession);
+    let cancelled = false;
+    loadSession().then((currentSession) => {
+      if (cancelled) return;
+      if (!currentSession) {
+        router.replace('/login/platform');
+        return;
+      }
+      setSession(currentSession);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   if (!session) return <p role="status">{messages.checking}</p>;
@@ -853,38 +856,15 @@ export function AccountScreen() {
             setMessage(issue === 'short' ? messages.passwordShort : messages.passwordWeak);
             return;
           }
-          if (session.actor === 'platform') {
-            const operator = PLATFORM_OPERATORS.find((item) => item.id === session.userId);
-            if (!operator || storedPlatformPassword(operator) !== current) {
+          void changeOwnPassword(current, next).then((result) => {
+            if (!result.ok) {
               setTone('danger');
-              setMessage(messages.wrongCredentials);
+              setMessage(result.code === 'VALIDATION_ERROR' ? messages.passwordWeak : messages.wrongCredentials);
               return;
             }
-            setPlatformPassword(operator.id, next);
-            setCurrent('');
-            setNext('');
-            setConfirm('');
-            setTone('success');
-            setMessage(messages.passwordSaved);
-            return;
-          }
-          const storedPassword = readUserPassword(session.userId);
-          if (!session.companyId || storedPassword === null || storedPassword !== current) {
-            setTone('danger');
-            setMessage(messages.wrongCredentials);
-            return;
-          }
-          const result = resetUserPassword(session.companyId, session.userId, next, null);
-          if (!result.ok) {
-            setTone('danger');
-            setMessage(messages.wrongCredentials);
-            return;
-          }
-          setCurrent('');
-          setNext('');
-          setConfirm('');
-          setTone('success');
-          setMessage(messages.passwordSaved);
+            forgetSupportCompany();
+            router.replace(session.actor === 'platform' ? '/login/platform' : '/login');
+          });
         }}
       >
         <h2>{messages.changePassword}</h2>
@@ -905,8 +885,4 @@ export function AccountScreen() {
     );
   }
   return <PlatformShell session={session}>{body}</PlatformShell>;
-}
-
-export function loadSessionForAccount() {
-  return readSession();
 }

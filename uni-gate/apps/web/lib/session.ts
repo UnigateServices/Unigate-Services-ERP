@@ -1,86 +1,61 @@
+import { api } from '@/lib/api';
 import type { AppSession } from '@/types/auth';
 
-const SESSION_KEY = 'ug_session';
+const SUPPORT_KEY = 'ug_support_company';
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
 
-function expired(expiresAt: number) {
-  return typeof expiresAt !== 'number' || expiresAt <= Date.now();
-}
-
-export function readSession(): AppSession | null {
-  if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<AppSession>;
-    if (parsed.actor !== 'platform' && parsed.actor !== 'member') return null;
-    if (!parsed.userId || !parsed.name || expired(parsed.expiresAt ?? 0)) {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
+type MeResponse =
+  | {
+      actor: 'platform';
+      userId: string;
+      name: string;
+      actingCompanyId: string | null;
     }
-    return {
-      actor: parsed.actor,
-      userId: parsed.userId,
-      name: parsed.name,
-      companyId: parsed.companyId ?? null,
-      roleKey: parsed.roleKey ?? null,
-      roleName: parsed.roleName ?? null,
-      locationId: parsed.locationId ?? null,
-      visibility: parsed.visibility ?? (parsed.actor === 'platform' ? 'PLATFORM' : 'OWN'),
-      canManageUsers: parsed.canManageUsers ?? parsed.actor === 'platform',
-      expiresAt: parsed.expiresAt ?? 0,
+  | {
+      actor: 'member';
+      userId: string;
+      name: string;
+      company: { id: string; name: string; code: string };
+      roleKey: string;
+      roleName: string;
+      locationId: string | null;
+      locationName: string | null;
+      visibility: 'OWN' | 'BRANCH' | 'ALL_BRANCHES';
+      canManageUsers: boolean;
     };
+
+export async function loadSession(): Promise<AppSession | null> {
+  try {
+    const { status, body } = await api<MeResponse>('/api/auth/me');
+    if (status !== 200 || !body) return null;
+    return toSession(body);
   } catch {
-    window.localStorage.removeItem(SESSION_KEY);
     return null;
   }
 }
 
-export function readPlatformSession() {
-  const session = readSession();
-  if (!session || session.actor !== 'platform') return null;
-  return session;
+export async function logout() {
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+  } catch {
+    // The support cursor is still cleared below.
+  }
+  forgetSupportCompany();
 }
 
-function persist(session: AppSession) {
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  return session;
-}
-
-export function writePlatformSession(operator: { id: string; name: string }) {
-  return persist({
-    actor: 'platform',
-    userId: operator.id,
-    name: operator.name,
-    companyId: null,
-    roleKey: null,
-    roleName: null,
-    locationId: null,
-    visibility: 'PLATFORM',
-    canManageUsers: true,
-    expiresAt: Date.now() + EIGHT_HOURS_MS,
+export async function changeOwnPassword(currentPassword: string, newPassword: string) {
+  const { status, body } = await api<{ code?: string }>('/api/auth/password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
   });
+  if (status === 204) return { ok: true as const };
+  return { ok: false as const, code: body?.code ?? 'UNAUTHORIZED' };
 }
 
-export function writeMemberSession(input: {
-  userId: string;
-  name: string;
-  companyId: string;
-  roleKey: string;
-  roleName: string;
-  locationId: string | null;
-  visibility: AppSession['visibility'];
-  canManageUsers: boolean;
-}) {
-  return persist({
-    actor: 'member',
-    ...input,
-    expiresAt: Date.now() + EIGHT_HOURS_MS,
-  });
-}
-
-export function writeSupportSession(current: AppSession, companyId: string) {
-  return persist({
+/** Client-only company cursor for the mock support screens. It is not the authentication cookie. */
+export function writeSupportSession(current: AppSession, companyId: string): AppSession {
+  window.localStorage.setItem(SUPPORT_KEY, companyId);
+  return {
     ...current,
     actor: 'platform',
     companyId,
@@ -89,12 +64,12 @@ export function writeSupportSession(current: AppSession, companyId: string) {
     locationId: null,
     visibility: 'PLATFORM',
     canManageUsers: true,
-    expiresAt: Date.now() + EIGHT_HOURS_MS,
-  });
+  };
 }
 
-export function clearSupportCompany(current: AppSession) {
-  return persist({
+export function clearSupportCompany(current: AppSession): AppSession {
+  forgetSupportCompany();
+  return {
     ...current,
     companyId: null,
     roleKey: null,
@@ -102,9 +77,45 @@ export function clearSupportCompany(current: AppSession) {
     locationId: null,
     visibility: 'PLATFORM',
     canManageUsers: true,
-  });
+  };
 }
 
-export function clearSession() {
-  window.localStorage.removeItem(SESSION_KEY);
+export function forgetSupportCompany() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(SUPPORT_KEY);
+}
+
+function toSession(me: MeResponse): AppSession {
+  const expiresAt = Date.now() + EIGHT_HOURS_MS;
+  if (me.actor === 'platform') {
+    return {
+      actor: 'platform',
+      userId: me.userId,
+      name: me.name,
+      companyId: readSupportCompanyId(),
+      roleKey: null,
+      roleName: null,
+      locationId: null,
+      visibility: 'PLATFORM',
+      canManageUsers: true,
+      expiresAt,
+    };
+  }
+  return {
+    actor: 'member',
+    userId: me.userId,
+    name: me.name,
+    companyId: me.company.id,
+    roleKey: me.roleKey,
+    roleName: me.roleName,
+    locationId: me.locationId,
+    visibility: me.visibility,
+    canManageUsers: me.canManageUsers,
+    expiresAt,
+  };
+}
+
+function readSupportCompanyId() {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(SUPPORT_KEY);
 }

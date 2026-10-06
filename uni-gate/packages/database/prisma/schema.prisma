@@ -95,6 +95,8 @@ model User {
   passwordHash     String     @map("password_hash")
   email            String?
   phone            String?
+  /// Shown in the shell. Not used as a login name.
+  name             String
   status           UserStatus @default(ACTIVE)
   /// Bumped on password change or administrator reset. Carried by the signed session.
   authVersion      Int        @default(1) @map("auth_version")

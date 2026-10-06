@@ -8,7 +8,7 @@ import { InlineAlert } from '@/components/inline-alert';
 import { PasswordField } from '@/components/password-field';
 import { PrimaryButton } from '@/components/primary-button';
 import { usePreferences } from '@/lib/preferences';
-import { readSession } from '@/lib/session';
+import { loadSession } from '@/lib/session';
 import { loginCustomer } from '@/services/customer-auth';
 import type { LoginFailureCode } from '@/types/auth';
 
@@ -27,12 +27,18 @@ export function CustomerLoginForm() {
   const alertRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const session = readSession();
-    if (session?.actor === 'member') {
-      router.replace('/app');
-      return;
-    }
-    setChecking(false);
+    let cancelled = false;
+    loadSession().then((session) => {
+      if (cancelled) return;
+      if (session?.actor === 'member') {
+        router.replace('/app');
+        return;
+      }
+      setChecking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const codeError = codeMissing ? messages.required : '';
@@ -57,7 +63,7 @@ export function CustomerLoginForm() {
     if (formError) alertRef.current?.focus();
   }, [formError]);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const missingCode = !code.trim();
     const missingName = !username.trim();
@@ -69,7 +75,7 @@ export function CustomerLoginForm() {
     if (missingCode || missingName || missingPassword) return;
     setSubmitting(true);
     try {
-      const result = loginCustomer(code, username, password);
+      const result = await loginCustomer(code, username, password);
       if (!result.ok) {
         setFormCode(result.code);
         if (result.code === 'WRONG_CREDENTIALS') setPassword('');

@@ -8,7 +8,7 @@ import { InlineAlert } from '@/components/inline-alert';
 import { PasswordField } from '@/components/password-field';
 import { PrimaryButton } from '@/components/primary-button';
 import { usePreferences } from '@/lib/preferences';
-import { readSession, writePlatformSession } from '@/lib/session';
+import { loadSession } from '@/lib/session';
 import { loginPlatform } from '@/services/platform-auth';
 import type { LoginFailureCode } from '@/types/auth';
 
@@ -27,12 +27,18 @@ export function PlatformLoginForm() {
   const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const current = readSession();
-    if (current?.actor === 'platform') {
-      router.replace(current.companyId ? '/app' : '/platform');
-      return;
-    }
-    setChecking(false);
+    let cancelled = false;
+    loadSession().then((current) => {
+      if (cancelled) return;
+      if (current?.actor === 'platform') {
+        router.replace(current.companyId ? '/app' : '/platform');
+        return;
+      }
+      setChecking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const usernameError = usernameMissing ? messages.required : '';
@@ -52,7 +58,7 @@ export function PlatformLoginForm() {
     if (formError) alertRef.current?.focus();
   }, [formError]);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextUsernameMissing = !username.trim();
     const nextPasswordMissing = !password;
@@ -70,13 +76,12 @@ export function PlatformLoginForm() {
 
     setSubmitting(true);
     try {
-      const result = loginPlatform(username, password);
+      const result = await loginPlatform(username, password);
       if (!result.ok) {
         setFormCode(result.code);
         if (result.code === 'WRONG_CREDENTIALS') setPassword('');
         return;
       }
-      writePlatformSession(result.operator);
       router.push('/platform');
     } catch {
       setFormCode('network');

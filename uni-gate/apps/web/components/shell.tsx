@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { LanguageSwitcher, ThemeModeSwitcher } from '@/components/preference-switchers';
 import { usePreferences } from '@/lib/preferences';
-import { clearSession, clearSupportCompany, readSession } from '@/lib/session';
+import { forgetSupportCompany, logout } from '@/lib/session';
 import { getCompany } from '@/services/directory';
 import type { AppSession } from '@/types/auth';
 
@@ -78,8 +78,9 @@ function ShellFrame({
               type="button"
               className="secondary-button"
               onClick={() => {
-                clearSession();
-                router.replace(session.actor === 'platform' ? '/login/platform' : '/login');
+                void logout().then(() => {
+                  router.replace(session.actor === 'platform' ? '/login/platform' : '/login');
+                });
               }}
             >
               {messages.logout}
@@ -161,8 +162,7 @@ function SupportBanner({
           type="button"
           className="secondary-button"
           onClick={() => {
-            const current = readSession();
-            if (current) clearSupportCompany(current);
+            forgetSupportCompany();
             router.push(`/platform/companies/${companyId}`);
           }}
         >

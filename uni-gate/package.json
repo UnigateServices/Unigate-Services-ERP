@@ -17,6 +17,7 @@
     "test:api": "npm run test -w @unigate/api",
     "db:generate": "npm run generate -w @unigate/database",
     "db:migrate": "npm run migrate:dev -w @unigate/database",
+    "db:seed:dev": "npm run seed:dev -w @unigate/api",
     "postinstall": "npm run generate -w @unigate/database --if-present"
   },
   "engines": {
