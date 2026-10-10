@@ -1,6 +1,6 @@
 # Unigate handoff
 
-Continuation document for a new Agent. It describes the repository after Phase 2 manual acceptance on 10 October 2026. It does not replace reading the code.
+Continuation document for a new Agent. It describes the repository after Phase 3 manual acceptance on 10 October 2026. It does not replace reading the code.
 
 Related earlier snapshot: `UNIGATE_CURRENT_STATE.md` (written before the backend foundation existed). Where they differ, trust this file and the current tree.
 
@@ -8,23 +8,22 @@ Related earlier snapshot: `UNIGATE_CURRENT_STATE.md` (written before the backend
 
 ## 1. Current completed phase and exact status
 
-**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, and Phase 2 authentication.
+**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, and Phase 3 platform company administration.
 
-**Not started:** Phase 3 company APIs. Do not start them until the user explicitly says so.
+**Not started:** Phase 4. Do not start it until the user explicitly says so. Support enter/leave, standalone branch, user, role, module, and audit APIs, and finance are still not built.
 
 **Git**
 
 | Item | State |
 |---|---|
 | Branch | `main`, tracking `origin/main` |
-| Authentication commit | `106c03a` — `Add signed cookie authentication so login and sessions are enforced by the API.` |
+| Authentication | `106c03a` — signed cookie authentication |
 | Company integrity | `fa53978` — composite foreign keys |
 | Phase 1 API and schema | `38ff4aa` |
 | Frontend prototype | `3cd02d6` |
+| Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
-Before this handoff update, `main` matched `origin/main` at `106c03a` and the working tree was clean. This file is the documentation update after manual acceptance.
-
-A fresh clone of `origin/main` includes the API, Prisma schema, three migrations, and the authentication layer. Do not reset or clean the tree.
+Phase 3 company administration is committed with this handoff update. A fresh clone includes the API, three migrations, authentication, and the platform company routes. Do not reset or clean the tree.
 
 ---
 
@@ -32,19 +31,19 @@ A fresh clone of `origin/main` includes the API, Prisma schema, three migrations
 
 **In code**
 
-- Frontend foundation under `uni-gate/apps/web`. Company, branch, user, role, module, and audit screens still use mock `localStorage` services.
+- Frontend foundation under `uni-gate/apps/web`.
+- Platform company list, create, detail, edit, suspend, and activate use `uni-gate/apps/web/services/platform-companies.ts`. Dashboard active and suspended counts use the same list contract.
 - Login, logout, session gate, `/api/auth/me`, and own password change use the API and the `ug_access` cookie.
-- NestJS app `uni-gate/apps/api` with config validation, validation pipe, error filter, CSRF origin check, health, and authentication.
-- Prisma schema and three migrations under `uni-gate/packages/database`.
-- Shared error codes, password policy, module registry, and `isSubscriptionExpired`.
+- NestJS platform company routes under `uni-gate/apps/api/src/platform/`.
+- Company creation is one transaction: company, first branch named like the company, the selected role preset, six `CompanyModule` rows, and a `CREATE` audit row.
+- Prisma schema and three migrations. No Phase 3 migration.
 - Development-only seed: `npm run db:seed:dev` from `uni-gate`. It refuses `NODE_ENV=production`.
 
 **Planned, not implemented**
 
-- Company, branch, role, user, module, and audit HTTP APIs.
-- Company bootstrap transaction (company + first branch + role preset + modules).
+- Standalone branch, role, user, module-edit, and audit HTTP APIs.
 - HTTP route for an administrator password reset. `PasswordService.resetPassword` exists and is tested. `POST /api/users/:id/password` is still 404.
-- Server enter/leave for platform support context. The UI still stores a client-only company id in `ug_support_company`. The API does not trust it.
+- Server enter/leave for platform support context. The company detail page no longer offers that action. `ug_support_company` remains a client-only key and the API does not trust it.
 - Finance, exchange, gold, aviation, engineering, and HR business logic.
 - Production hosting.
 
@@ -58,7 +57,10 @@ A fresh clone of `origin/main` includes the API, Prisma schema, three migrations
 - Authentication session is the `ug_access` cookie plus `GET /api/auth/me`. It is not stored in `localStorage`.
 - Language and theme preferences remain in `localStorage`.
 - Platform support navigation still writes `ug_support_company` in `localStorage` so the mock screens can open a company. That key is not a credential.
-- Directory mocks remain in `uni-gate/apps/web/services/directory.ts` and `uni-gate/apps/web/mocks/`.
+- Platform company screens do not read companies from `ug_mock_db`.
+- The company detail page does not link to branches, users, roles, modules, or support entry. It says those areas connect later. Direct URLs for those screens still use the mock store and will not find a real company id.
+- The audit screen and the dashboard's recent-activity table still use the mock log. Recent activity is text only and does not open a company.
+- Directory mocks remain for branches, users, roles, module editing, and audit.
 - `readUserPassword` remains in the mock directory and must never become an API. The account screen no longer uses it.
 - An administrator resetting another user's password in the user form still writes the mock database.
 
@@ -75,6 +77,19 @@ Authentication lives in `uni-gate/apps/api/src/auth/`.
 | POST | `/api/auth/logout` | Clears the cookie. 204. Does not keep a server session list. |
 | GET | `/api/auth/me` | Current identity loaded from PostgreSQL. |
 | POST | `/api/auth/password` | Verifies the current password, stores a new hash, increments `authVersion`, clears the cookie. 204. |
+
+Platform company routes, all platform-operator only:
+
+| Method | Path | Behavior |
+|---|---|---|
+| GET | `/api/platform/companies` | `{ items, page, pageSize, total }`. Default page size 20, maximum 100. Ordered by name, then id. `q` matches name or code. `status` is `ACTIVE` or `SUSPENDED`. |
+| POST | `/api/platform/companies` | Bootstrap transaction. Code is lowercased. Duplicate code, including case-only, is `409` `CODE_TAKEN`. |
+| GET | `/api/platform/companies/:companyId` | Platform DTO plus branch count, user count, and six module flags. Unknown id is `404` `NOT_FOUND`. |
+| PATCH | `/api/platform/companies/:companyId` | Name, code, `priceUsd`, and `expiresOn` only. Does not change status. |
+| POST | `/api/platform/companies/:companyId/suspend` | Sets `SUSPENDED`. Writes audit `UPDATE`. Does not delete rows. |
+| POST | `/api/platform/companies/:companyId/activate` | Body `{ expiresOn }`. A date before today in `Asia/Damascus` is `400` `DATE_PAST`. |
+
+A member receives `403` `FORBIDDEN` on these routes. A missing cookie receives `401`. `priceUsd` is a decimal string for PostgreSQL `numeric(12,2)`. A past `expiresOn` does not change `ACTIVE` to `SUSPENDED`. Role presets are `tradivia` (four roles) and `simple` (`OWNER` and `STAFF`) in `role-presets.ts`. They are not global authorization.
 
 `GET /api/health` still returns `{ ok: true }`.
 
@@ -148,7 +163,7 @@ If the server is down:
 
 `Company.status` `SUSPENDED` means a person suspended the company. It is not set when the date passes.
 
-`SUBSCRIPTION_EXPIRED` is a login error code, not a `CompanyStatus` value. Members cannot sign in when suspended or expired. Platform operators can still sign in to the platform. Reactivation requires a new end date that is not in the past (`DATE_PAST` if it is). That reactivation API is not built yet.
+`SUBSCRIPTION_EXPIRED` is a login error code, not a `CompanyStatus` value. Members cannot sign in when suspended or expired. Platform operators can still administer a suspended company. Reactivation is `POST /api/platform/companies/:companyId/activate` and returns `DATE_PAST` when the new end date is already past. The expiry day itself is still valid.
 
 `CompanyModule.enabled` is the only module flag in the database. `ready` lives in `MODULE_REGISTRY` and is `false` for all six keys. Do not store `ready` per company.
 
@@ -166,16 +181,16 @@ Do not start Unigate from that schema. Do not import its auth. Do not merge its 
 
 ---
 
-## 10. Tests and build results from Phase 2 acceptance
+## 10. Tests and build results from Phase 3 acceptance
 
-Re-run on 5 October 2026 after the session, lock, and secret checks:
+Re-run on 10 October 2026 after the company API and platform screens:
 
 | Command | Result |
 |---|---|
 | `prisma validate` | Schema valid |
 | `prisma migrate status` | 3 migrations, schema up to date |
 | `tsc --noEmit` for shared, database, API, and web | Exit 0 |
-| `npm run test -w @unigate/api` | 5 suites passed, 20 tests passed |
+| `npm run test -w @unigate/api` | 6 suites passed, 24 tests passed |
 | `nest build` | Exit 0 |
 | `next build` | Exit 0 |
 
@@ -195,9 +210,9 @@ Do not commit `.env`, PostgreSQL data directories, `unigate-postgres` logs, or J
 
 ## 12. Exact next action for the next Agent
 
-1. Read this file and `git status`. Confirm `main` contains `106c03a` and do not discard the tree.
-2. Wait until the user explicitly starts **Phase 3**.
-3. Phase 3 is company APIs only: create, read, update, suspend, activate, modules, and the support enter/leave cursor on the server. Do not start finance, and do not implement branch, role, and user CRUD in the same turn unless the user expands the scope.
+1. Read this file and `git status`. Do not discard the tree.
+2. Wait until the user explicitly starts **Phase 4** and names its scope.
+3. Do not assume Phase 4 is support enter/leave, branches, users, roles, modules, or audit. Those are unbuilt, but the user chooses the next phase.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. When support enter is built, set `actingCompanyId` in the signed session and stop using `ug_support_company` as the source of truth.
 
@@ -207,7 +222,7 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 
 ## DO NOT DO
 
-- Do not start Phase 3 until the user explicitly says so.
+- Do not start Phase 4 until the user explicitly says so.
 - Do not start Finance integration.
 - Do not copy the TRADIVIA Prisma schema or its `Employee` login model.
 - Do not trust client-supplied company context.

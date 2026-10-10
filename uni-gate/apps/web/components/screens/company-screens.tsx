@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { FormField } from '@/components/form-field';
 import { InlineAlert } from '@/components/inline-alert';
 import { PrimaryButton } from '@/components/primary-button';
@@ -10,31 +10,30 @@ import { ConfirmDialog, PageHeader, PlatformShell, StatusBadge } from '@/compone
 import { formatDate, formatUsd, isPastDate, todayDamascus } from '@/lib/dates';
 import { moduleLabel } from '@/lib/messages';
 import { usePreferences } from '@/lib/preferences';
-import { writeSupportSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
+import { codeIssue, getCompany, listModules, setModules } from '@/services/directory';
 import {
-  activateCompany,
-  codeIssue,
-  companyCounts,
-  createCompany,
-  enterCompany,
-  getCompany,
-  listModules,
-  setModules,
-  suspendCompany,
-  updateCompany,
-} from '@/services/directory';
+  activatePlatformCompany,
+  createPlatformCompany,
+  getPlatformCompany,
+  suspendPlatformCompany,
+  updatePlatformCompany,
+  type PlatformCompany,
+} from '@/services/platform-companies';
 import { MODULE_KEYS, type ModuleKey, type RolePreset } from '@/types/auth';
 
 export function CompanyFormScreen({ companyId }: { companyId?: string }) {
   const session = useGate('platform');
   const router = useRouter();
   const { messages } = usePreferences();
-  const existing = companyId ? getCompany(companyId) : null;
-  const [name, setName] = useState(existing?.name ?? '');
-  const [code, setCode] = useState(existing?.code ?? '');
-  const [price, setPrice] = useState(existing ? String(existing.priceUsd) : '');
-  const [expiresOn, setExpiresOn] = useState(existing?.expiresOn ?? '');
+  const [loaded, setLoaded] = useState<PlatformCompany | null>(null);
+  const [ready, setReady] = useState(!companyId);
+  const [missing, setMissing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [price, setPrice] = useState('');
+  const [expiresOn, setExpiresOn] = useState('');
   const [preset, setPreset] = useState<RolePreset>('simple');
   const [selected, setSelected] = useState<ModuleKey[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -42,26 +41,65 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
   const [confirmSuspend, setConfirmSuspend] = useState(false);
   const [confirmActivate, setConfirmActivate] = useState(false);
   const [activateDate, setActivateDate] = useState(todayDamascus());
+  const [submitting, setSubmitting] = useState(false);
 
-  if (!session) return <p role="status">{messages.checking}</p>;
-  if (companyId && !existing) return <PlatformShell session={session}><p>{messages.notFound}</p></PlatformShell>;
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    getPlatformCompany(companyId).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setMissing(result.code === 'NOT_FOUND');
+        setLoadError(result.code === 'NOT_FOUND' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      setLoaded(result.company);
+      setName(result.company.name);
+      setCode(result.company.code);
+      setPrice(result.company.priceUsd);
+      setExpiresOn(result.company.expiresOn);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, messages.network]);
 
-  function onSubmit(event: FormEvent) {
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  if (loadError) {
+    return (
+      <PlatformShell session={session}>
+        <InlineAlert message={loadError} />
+      </PlatformShell>
+    );
+  }
+  if (companyId && (missing || !loaded)) {
+    return (
+      <PlatformShell session={session}>
+        <p>{messages.notFound}</p>
+      </PlatformShell>
+    );
+  }
+
+  async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = messages.required;
     if (!code.trim()) next.code = messages.required;
     else if (codeIssue(code.trim().toLowerCase())) next.code = messages.codeInvalid;
-    if (price.trim() === '' || Number.isNaN(Number(price)) || Number(price) < 0) next.price = messages.required;
+    if (!/^\d{1,10}(\.\d{1,2})?$/.test(price.trim())) next.price = messages.required;
     if (!expiresOn) next.expiresOn = messages.required;
     setErrors(next);
     if (Object.keys(next).length || !session) return;
-    const payload = { name, code, priceUsd: Number(price), expiresOn };
-    const result = existing
-      ? updateCompany(existing.id, payload, { id: session.userId, name: session.name })
-      : createCompany({ ...payload, preset, modules: selected }, { id: session.userId, name: session.name });
-    if (!result.ok) {
-      setErrors({ code: result.code === 'CODE_TAKEN' ? messages.codeTaken : messages.network });
+    setSubmitting(true);
+    const payload = { name: name.trim(), code: code.trim().toLowerCase(), priceUsd: price.trim(), expiresOn };
+    const result = loaded
+      ? await updatePlatformCompany(loaded.id, payload)
+      : await createPlatformCompany({ ...payload, preset, modules: selected });
+    setSubmitting(false);
+    if (!result.ok || !result.company) {
+      setErrors({ code: result.ok ? messages.network : result.code === 'CODE_TAKEN' ? messages.codeTaken : messages.network });
       return;
     }
     router.push(`/platform/companies/${result.company.id}`);
@@ -70,11 +108,11 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
   return (
     <PlatformShell session={session}>
       <PageHeader
-        title={existing ? messages.editSubscription : messages.createCompany}
+        title={loaded ? messages.editSubscription : messages.createCompany}
         crumbs={[
           { href: '/platform', label: messages.navDashboard },
           { href: '/platform/companies', label: messages.navCompanies },
-          { label: existing ? existing.name : messages.newCompany },
+          { label: loaded ? loaded.name : messages.newCompany },
         ]}
       />
       <form className="stack-form" onSubmit={onSubmit} noValidate>
@@ -102,7 +140,7 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
           </FormField>
           {expiresOn && isPastDate(expiresOn) ? <InlineAlert tone="info" message={messages.datePastNotice} /> : null}
         </fieldset>
-        {!existing ? (
+        {!loaded ? (
           <fieldset>
             <legend>{messages.preset}</legend>
             <label className="choice">
@@ -121,7 +159,7 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
             </label>
           </fieldset>
         ) : null}
-        {!existing ? (
+        {!loaded ? (
           <fieldset>
             <legend>{messages.modulesSection}</legend>
             <p className="field-hint">{messages.modulesHint}</p>
@@ -143,12 +181,12 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
           </fieldset>
         ) : null}
         {notice ? <InlineAlert tone="success" message={notice} /> : null}
-        <PrimaryButton>{messages.save}</PrimaryButton>
+        <PrimaryButton disabled={submitting}>{submitting ? messages.submitting : messages.save}</PrimaryButton>
       </form>
-      {existing ? (
+      {loaded ? (
         <section className="danger-zone">
           <h2>{messages.dangerZone}</h2>
-          {existing.status === 'ACTIVE' ? (
+          {loaded.status === 'ACTIVE' ? (
             <button type="button" className="danger-button" onClick={() => setConfirmSuspend(true)}>
               {messages.suspendCompany}
             </button>
@@ -171,12 +209,16 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
         confirmLabel={messages.suspendCompany}
         onClose={() => setConfirmSuspend(false)}
         onConfirm={() => {
-          if (!existing) return;
-          suspendCompany(existing.id, { id: session.userId, name: session.name });
-          setConfirmSuspend(false);
-          setNotice(messages.saved);
-          router.refresh();
-          window.location.assign(`/platform/companies/${existing.id}/edit`);
+          if (!loaded) return;
+          void suspendPlatformCompany(loaded.id).then((result) => {
+            setConfirmSuspend(false);
+            if (!result.ok || !result.company) {
+              setErrors({ code: messages.network });
+              return;
+            }
+            setLoaded(result.company);
+            setNotice(messages.saved);
+          });
         }}
       />
       <ConfirmDialog
@@ -186,14 +228,17 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
         confirmLabel={messages.activateCompany}
         onClose={() => setConfirmActivate(false)}
         onConfirm={() => {
-          if (!existing) return;
-          const result = activateCompany(existing.id, activateDate, { id: session.userId, name: session.name });
-          if (!result.ok) {
-            setErrors({ expiresOn: messages.datePastNotice });
+          if (!loaded) return;
+          void activatePlatformCompany(loaded.id, activateDate).then((result) => {
             setConfirmActivate(false);
-            return;
-          }
-          window.location.assign(`/platform/companies/${existing.id}/edit`);
+            if (!result.ok || !result.company) {
+              setErrors({ expiresOn: result.ok ? messages.network : result.code === 'DATE_PAST' ? messages.datePastNotice : messages.network });
+              return;
+            }
+            setLoaded(result.company);
+            setExpiresOn(result.company.expiresOn);
+            setNotice(messages.saved);
+          });
         }}
       />
     </PlatformShell>
@@ -203,18 +248,50 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
 export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
   const session = useGate('platform');
   const { messages, lang } = usePreferences();
-  const [open, setOpen] = useState(false);
-  const company = getCompany(companyId);
-  if (!session) return <p role="status">{messages.checking}</p>;
-  if (!company) {
+  const [company, setCompany] = useState<PlatformCompany | null>(null);
+  const [counts, setCounts] = useState({ branches: 0, users: 0 });
+  const [modules, setModules] = useState<{ key: ModuleKey; enabled: boolean }[]>([]);
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    getPlatformCompany(companyId).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setMissing(result.code === 'NOT_FOUND');
+        setLoadError(result.code === 'NOT_FOUND' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      setCompany(result.company);
+      setCounts(result.company.counts);
+      setModules(result.company.modules);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, messages.network]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  if (loadError) {
+    return (
+      <PlatformShell session={session}>
+        <InlineAlert message={loadError} />
+      </PlatformShell>
+    );
+  }
+  if (missing || !company) {
     return (
       <PlatformShell session={session}>
         <p>{messages.notFound}</p>
       </PlatformShell>
     );
   }
-  const counts = companyCounts(company.id);
-  const enabled = listModules(company.id).filter((item) => item.enabled);
+  const enabled = modules.filter((item) => item.enabled);
+  const price = Number(company.priceUsd);
   return (
     <PlatformShell session={session}>
       <PageHeader
@@ -225,14 +302,9 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
           { label: company.name },
         ]}
         actions={
-          <>
-            <button type="button" className="primary-button" onClick={() => setOpen(true)}>
-              {messages.enterCompany}
-            </button>
-            <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
-              {messages.editSubscription}
-            </Link>
-          </>
+          <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
+            {messages.editSubscription}
+          </Link>
         }
       />
       {company.status === 'SUSPENDED' ? <InlineAlert tone="info" message={messages.suspendBody} /> : null}
@@ -253,7 +325,7 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
         </div>
         <div>
           <dt>{messages.price}</dt>
-          <dd>{formatUsd(company.priceUsd, lang)}</dd>
+          <dd>{formatUsd(price, lang)}</dd>
         </div>
         <div>
           <dt>{messages.countsBranches}</dt>
@@ -264,37 +336,19 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
           <dd>{counts.users}</dd>
         </div>
       </dl>
-      <div className="link-row">
-        <Link href={`/platform/companies/${company.id}/branches`}>{messages.navBranches}</Link>
-        <Link href={`/platform/companies/${company.id}/users`}>{messages.navUsers}</Link>
-        <Link href={`/platform/companies/${company.id}/roles`}>{messages.navRoles}</Link>
-        <Link href={`/platform/companies/${company.id}/modules`}>{messages.navModules}</Link>
-      </div>
+      <p className="field-hint">{messages.pendingAreas}</p>
       <h2>{messages.enabledModules}</h2>
       {enabled.length === 0 ? (
         <p>{messages.none}</p>
       ) : (
         <ul>
           {enabled.map((item) => (
-            <li key={item.moduleKey}>
-              {moduleLabel(item.moduleKey, messages)} — {messages.notReadyYet}
+            <li key={item.key}>
+              {moduleLabel(item.key, messages)} — {messages.notReadyYet}
             </li>
           ))}
         </ul>
       )}
-      <ConfirmDialog
-        open={open}
-        title={messages.enterTitle}
-        body={`${company.name}. ${messages.enterBody}`}
-        confirmLabel={messages.enterCompany}
-        onClose={() => setOpen(false)}
-        onConfirm={() => {
-          const result = enterCompany(session, company.id);
-          if (!result.ok) return;
-          writeSupportSession(session, company.id);
-          window.location.assign('/app');
-        }}
-      />
     </PlatformShell>
   );
 }

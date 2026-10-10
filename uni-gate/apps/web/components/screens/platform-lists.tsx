@@ -1,21 +1,42 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState, PageHeader, Pagination, PlatformShell, StatusBadge } from '@/components/shell';
+import { InlineAlert } from '@/components/inline-alert';
 import { formatDate, formatDateTime, formatUsd } from '@/lib/dates';
 import { usePreferences } from '@/lib/preferences';
 import { pageOf } from '@/lib/page';
 import { useGate } from '@/lib/use-gate';
-import { countCompanies, getCompany, listAudit, listCompanies } from '@/services/directory';
+import { getCompany, listAudit, listCompanies } from '@/services/directory';
+import { countPlatformCompanies, listPlatformCompanies, type PlatformCompany } from '@/services/platform-companies';
 
 export function PlatformDashboard() {
   const session = useGate('platform');
   const { messages, lang } = usePreferences();
-  const active = session ? countCompanies('ACTIVE') : 0;
-  const suspended = session ? countCompanies('SUSPENDED') : 0;
-  const recent = session ? listAudit().slice(0, 5) : [];
+  const [active, setActive] = useState<number | null>(null);
+  const [suspended, setSuspended] = useState<number | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    Promise.all([countPlatformCompanies('ACTIVE'), countPlatformCompanies('SUSPENDED')]).then(([activeResult, suspendedResult]) => {
+      if (cancelled) return;
+      if (!activeResult.ok || !suspendedResult.ok) {
+        setError(messages.network);
+        return;
+      }
+      setActive(activeResult.total);
+      setSuspended(suspendedResult.total);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, messages.network]);
+
   if (!session) return <p role="status">{messages.checking}</p>;
+  const recent = listAudit().slice(0, 5);
 
   return (
     <PlatformShell session={session}>
@@ -27,13 +48,14 @@ export function PlatformDashboard() {
           </Link>
         }
       />
+      {error ? <InlineAlert message={error} /> : null}
       <div className="stat-row">
         <Link className="stat-link" href="/platform/companies?status=ACTIVE">
-          <strong>{active}</strong>
+          <strong>{active ?? '…'}</strong>
           <span>{messages.activeCompanies}</span>
         </Link>
         <Link className="stat-link" href="/platform/companies?status=SUSPENDED">
-          <strong>{suspended}</strong>
+          <strong>{suspended ?? '…'}</strong>
           <span>{messages.suspendedCompanies}</span>
         </Link>
       </div>
@@ -59,9 +81,7 @@ export function PlatformDashboard() {
                     <td>{formatDateTime(entry.createdAt, lang)}</td>
                     <td>{entry.actorName}</td>
                     <td>{actionLabel(entry.action, messages)}</td>
-                    <td>
-                      {company ? <Link href={`/platform/companies/${company.id}`}>{company.name}</Link> : entry.companyId}
-                    </td>
+                    <td>{company?.name ?? entry.companyId}</td>
                   </tr>
                 );
               })}
@@ -79,9 +99,36 @@ export function CompaniesScreen({ initialStatus }: { initialStatus?: 'ACTIVE' | 
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<'' | 'ACTIVE' | 'SUSPENDED'>(initialStatus ?? '');
   const [page, setPage] = useState(1);
-  const filtered = useMemo(() => (session ? listCompanies({ q, status }) : []), [session, q, status]);
-  const view = pageOf(filtered, page);
+  const [rows, setRows] = useState<PlatformCompany[]>([]);
+  const [total, setTotal] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    setReady(false);
+    listPlatformCompanies({ page, q, status }).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setError(messages.network);
+        setRows([]);
+        setTotal(0);
+        setReady(true);
+        return;
+      }
+      setError('');
+      setRows(result.list.items);
+      setTotal(result.list.total);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, page, q, status, messages.network]);
+
   if (!session) return <p role="status">{messages.checking}</p>;
+  const pages = Math.max(1, Math.ceil(total / 20));
 
   return (
     <PlatformShell session={session}>
@@ -120,7 +167,10 @@ export function CompaniesScreen({ initialStatus }: { initialStatus?: 'ACTIVE' | 
           </select>
         </label>
       </div>
-      {filtered.length === 0 ? (
+      {error ? <InlineAlert message={error} /> : null}
+      {!ready ? (
+        <p role="status">{messages.checking}</p>
+      ) : rows.length === 0 ? (
         <EmptyState text={q || status ? messages.noResults : messages.empty} />
       ) : (
         <div className="table-wrap">
@@ -136,7 +186,7 @@ export function CompaniesScreen({ initialStatus }: { initialStatus?: 'ACTIVE' | 
               </tr>
             </thead>
             <tbody>
-              {view.rows.map((company) => (
+              {rows.map((company) => (
                 <tr key={company.id}>
                   <td>{company.name}</td>
                   <td>{company.code}</td>
@@ -144,7 +194,7 @@ export function CompaniesScreen({ initialStatus }: { initialStatus?: 'ACTIVE' | 
                     <StatusBadge status={company.status} />
                   </td>
                   <td>{formatDate(company.expiresOn, lang)}</td>
-                  <td>{formatUsd(company.priceUsd, lang)}</td>
+                  <td>{formatUsd(Number(company.priceUsd), lang)}</td>
                   <td>
                     <Link href={`/platform/companies/${company.id}`}>{messages.open}</Link>
                   </td>
@@ -154,7 +204,7 @@ export function CompaniesScreen({ initialStatus }: { initialStatus?: 'ACTIVE' | 
           </table>
         </div>
       )}
-      <Pagination page={view.page} pages={view.pages} onPage={setPage} />
+      <Pagination page={page} pages={pages} onPage={setPage} />
     </PlatformShell>
   );
 }
