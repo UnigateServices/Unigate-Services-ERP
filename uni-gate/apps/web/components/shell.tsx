@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { LanguageSwitcher, ThemeModeSwitcher } from '@/components/preference-switchers';
 import { usePreferences } from '@/lib/preferences';
-import { forgetSupportCompany, logout } from '@/lib/session';
+import { leaveSupportCompany, logout } from '@/lib/session';
 import { getCompany } from '@/services/directory';
 import type { AppSession } from '@/types/auth';
 
@@ -30,7 +30,7 @@ function ShellFrame({
   const router = useRouter();
   const { messages } = usePreferences();
   const [open, setOpen] = useState(false);
-  const supportCompany = session.companyId ? getCompany(session.companyId) : null;
+  const supportCompany = session.actor === 'platform' ? session.actingCompany : null;
 
   useEffect(() => {
     setOpen(false);
@@ -63,7 +63,7 @@ function ShellFrame({
           <p className="context-label">
             <span className="context-word">{contextLabel}</span>
           </p>
-          {supportCompany && contextLabel !== messages.supportBanner ? (
+          {supportCompany && !banner ? (
             <p className="support-chip">
               {messages.supportStillOpen}: {supportCompany.name}
             </p>
@@ -71,7 +71,7 @@ function ShellFrame({
           <div className="topbar-tools">
             <LanguageSwitcher />
             <ThemeModeSwitcher />
-            <Link className="text-link" href={session.companyId ? '/app/account' : '/platform/account'}>
+            <Link className="text-link" href={session.actor === 'platform' ? '/platform/account' : '/app/account'}>
               {session.name}
             </Link>
             <button
@@ -121,16 +121,19 @@ export function AppShell({
   children: ReactNode;
 }) {
   const { messages } = usePreferences();
-  const company = session.companyId ? getCompany(session.companyId) : null;
+  const support = session.actor === 'platform' ? session.actingCompany : null;
+  const company = !support && session.companyId ? getCompany(session.companyId) : null;
+  const companyName = support?.name ?? company?.name;
+  const suspended = (support?.status ?? company?.status) === 'SUSPENDED';
   const banner =
-    session.actor === 'platform' && company ? (
-      <SupportBanner companyId={company.id} companyName={company.name} suspended={company.status === 'SUSPENDED'} />
+    session.actor === 'platform' && support ? (
+      <SupportBanner companyId={support.id} companyName={support.name} suspended={suspended} />
     ) : null;
   return (
     <ShellFrame
       session={session}
-      contextLabel={company ? `${messages.companyContext} ${company.name}` : messages.companyContext}
-      brand={company?.name ?? messages.companyContext}
+      contextLabel={companyName ? `${messages.companyContext} ${companyName}` : messages.companyContext}
+      brand={companyName ?? messages.companyContext}
       items={items}
       banner={banner}
     >
@@ -157,13 +160,14 @@ function SupportBanner({
         {suspended ? <span className="banner-note"> — {messages.supportSuspended}</span> : null}
       </p>
       <div className="banner-actions">
-        <Link href={`/platform/companies/${companyId}/modules`}>{messages.manageModules}</Link>
         <button
           type="button"
           className="secondary-button"
           onClick={() => {
-            forgetSupportCompany();
-            router.push(`/platform/companies/${companyId}`);
+            void leaveSupportCompany(companyId).then((result) => {
+              if (!result.ok) return;
+              router.push(`/platform/companies/${companyId}`);
+            });
           }}
         >
           {messages.leaveCompany}

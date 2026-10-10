@@ -73,7 +73,7 @@ describe('authentication', () => {
       actor: 'platform',
       userId: user.id,
       name: 'Operator',
-      actingCompanyId: null,
+      actingCompany: null,
     });
     expect(JSON.stringify(me.body)).not.toMatch(/priceUsd|passwordHash|expiresOn/);
   });

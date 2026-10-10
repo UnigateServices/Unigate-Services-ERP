@@ -24,9 +24,17 @@ export type MemberContext = {
   canManageUsers: boolean;
 };
 
+export type ActingCompany = {
+  id: string;
+  name: string;
+  code: string;
+  status: CompanyStatus;
+};
+
 export type RequestAuth = SessionClaims & {
   name: string;
   membership: MemberContext | null;
+  actingCompany: ActingCompany | null;
 };
 
 @Injectable()
@@ -126,13 +134,16 @@ export class AuthService {
     if (!user || user.status !== UserStatus.ACTIVE || user.authVersion !== claims.authVersion) return null;
     if (claims.actor === 'platform') {
       if (user.kind !== UserKind.PLATFORM) return null;
+      const actingCompany = await this.loadActingCompany(claims.actingCompanyId);
       return {
         userId: user.id,
         actor: 'platform',
         authVersion: user.authVersion,
-        actingCompanyId: claims.actingCompanyId,
+        actingCompanyId: actingCompany?.id ?? null,
+        expiresAt: claims.expiresAt,
         name: user.name,
         membership: null,
+        actingCompany,
       };
     }
     if (user.kind !== UserKind.MEMBER) return null;
@@ -147,6 +158,7 @@ export class AuthService {
       actor: 'member',
       authVersion: user.authVersion,
       actingCompanyId: null,
+      expiresAt: claims.expiresAt,
       name: user.name,
       membership: {
         companyId: membership.company.id,
@@ -159,6 +171,7 @@ export class AuthService {
         visibility: membership.role.visibilityScope,
         canManageUsers: membership.role.canManageUsers,
       },
+      actingCompany: null,
     };
   }
 
@@ -168,7 +181,14 @@ export class AuthService {
         actor: 'platform' as const,
         userId: auth.userId,
         name: auth.name,
-        actingCompanyId: auth.actingCompanyId,
+        actingCompany: auth.actingCompany
+          ? {
+              id: auth.actingCompany.id,
+              name: auth.actingCompany.name,
+              code: auth.actingCompany.code,
+              status: auth.actingCompany.status,
+            }
+          : null,
       };
     }
     const membership = auth.membership;
@@ -194,6 +214,15 @@ export class AuthService {
       visibility: membership.visibility,
       canManageUsers: membership.canManageUsers,
     };
+  }
+
+  private async loadActingCompany(companyId: string | null): Promise<ActingCompany | null> {
+    if (!companyId) return null;
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true, code: true, status: true },
+    });
+    return company;
   }
 
   private async assertNotLocked(user: { id: string; lockedUntil: Date | null; failedLoginCount: number }) {

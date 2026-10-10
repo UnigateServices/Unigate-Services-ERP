@@ -95,6 +95,15 @@ export async function updatePlatformCompany(
   }
 }
 
+export async function enterPlatformCompany(companyId: string) {
+  try {
+    const { status, body } = await api<{ code?: string }>(`/api/platform/companies/${companyId}/enter`, { method: 'POST' });
+    if (status !== 200) return { ok: false as const, code: body?.code ?? 'network' };
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, code: 'network' };
+  }
+}
 export async function suspendPlatformCompany(companyId: string) {
   try {
     const { status, body } = await api<PlatformCompany>(`/api/platform/companies/${companyId}/suspend`, { method: 'POST' });

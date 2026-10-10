@@ -40,6 +40,12 @@ export type AppSession = {
   visibility: SessionVisibility;
   canManageUsers: boolean;
   expiresAt: number;
+  actingCompany: {
+    id: string;
+    name: string;
+    code: string;
+    status: CompanyStatus;
+  } | null;
 };
 
 export type PlatformOperatorFixture = {

@@ -1,15 +1,22 @@
 import { api } from '@/lib/api';
 import type { AppSession } from '@/types/auth';
 
-const SUPPORT_KEY = 'ug_support_company';
+const STALE_SUPPORT_KEY = 'ug_support_company';
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+
+type ActingCompany = {
+  id: string;
+  name: string;
+  code: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+};
 
 type MeResponse =
   | {
       actor: 'platform';
       userId: string;
       name: string;
-      actingCompanyId: string | null;
+      actingCompany: ActingCompany | null;
     }
   | {
       actor: 'member';
@@ -25,6 +32,7 @@ type MeResponse =
     };
 
 export async function loadSession(): Promise<AppSession | null> {
+  clearStaleSupportKey();
   try {
     const { status, body } = await api<MeResponse>('/api/auth/me');
     if (status !== 200 || !body) return null;
@@ -38,9 +46,9 @@ export async function logout() {
   try {
     await api('/api/auth/logout', { method: 'POST' });
   } catch {
-    // The support cursor is still cleared below.
+    // The local session is still treated as signed out.
   }
-  forgetSupportCompany();
+  clearStaleSupportKey();
 }
 
 export async function changeOwnPassword(currentPassword: string, newPassword: string) {
@@ -52,37 +60,14 @@ export async function changeOwnPassword(currentPassword: string, newPassword: st
   return { ok: false as const, code: body?.code ?? 'UNAUTHORIZED' };
 }
 
-/** Client-only company cursor for the mock support screens. It is not the authentication cookie. */
-export function writeSupportSession(current: AppSession, companyId: string): AppSession {
-  window.localStorage.setItem(SUPPORT_KEY, companyId);
-  return {
-    ...current,
-    actor: 'platform',
-    companyId,
-    roleKey: null,
-    roleName: null,
-    locationId: null,
-    visibility: 'PLATFORM',
-    canManageUsers: true,
-  };
-}
-
-export function clearSupportCompany(current: AppSession): AppSession {
-  forgetSupportCompany();
-  return {
-    ...current,
-    companyId: null,
-    roleKey: null,
-    roleName: null,
-    locationId: null,
-    visibility: 'PLATFORM',
-    canManageUsers: true,
-  };
-}
-
-export function forgetSupportCompany() {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(SUPPORT_KEY);
+export async function leaveSupportCompany(companyId: string) {
+  try {
+    const { status, body } = await api<{ code?: string }>(`/api/platform/companies/${companyId}/leave`, { method: 'POST' });
+    if (status !== 200) return { ok: false as const, code: body?.code ?? 'network' };
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, code: 'network' };
+  }
 }
 
 function toSession(me: MeResponse): AppSession {
@@ -92,13 +77,14 @@ function toSession(me: MeResponse): AppSession {
       actor: 'platform',
       userId: me.userId,
       name: me.name,
-      companyId: readSupportCompanyId(),
+      companyId: me.actingCompany?.id ?? null,
       roleKey: null,
       roleName: null,
       locationId: null,
       visibility: 'PLATFORM',
       canManageUsers: true,
       expiresAt,
+      actingCompany: me.actingCompany,
     };
   }
   return {
@@ -112,10 +98,11 @@ function toSession(me: MeResponse): AppSession {
     visibility: me.visibility,
     canManageUsers: me.canManageUsers,
     expiresAt,
+    actingCompany: null,
   };
 }
 
-function readSupportCompanyId() {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(SUPPORT_KEY);
+function clearStaleSupportKey() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(STALE_SUPPORT_KEY);
 }

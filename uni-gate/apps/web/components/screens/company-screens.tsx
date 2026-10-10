@@ -15,6 +15,7 @@ import { codeIssue, getCompany, listModules, setModules } from '@/services/direc
 import {
   activatePlatformCompany,
   createPlatformCompany,
+  enterPlatformCompany,
   getPlatformCompany,
   suspendPlatformCompany,
   updatePlatformCompany,
@@ -247,6 +248,7 @@ export function CompanyFormScreen({ companyId }: { companyId?: string }) {
 
 export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
   const session = useGate('platform');
+  const router = useRouter();
   const { messages, lang } = usePreferences();
   const [company, setCompany] = useState<PlatformCompany | null>(null);
   const [counts, setCounts] = useState({ branches: 0, users: 0 });
@@ -254,6 +256,8 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
   const [ready, setReady] = useState(false);
   const [missing, setMissing] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [entering, setEntering] = useState(false);
+  const [enterError, setEnterError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -302,11 +306,33 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
           { label: company.name },
         ]}
         actions={
-          <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
-            {messages.editSubscription}
-          </Link>
+          <>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={entering}
+              onClick={() => {
+                setEntering(true);
+                setEnterError('');
+                void enterPlatformCompany(company.id).then((result) => {
+                  setEntering(false);
+                  if (!result.ok) {
+                    setEnterError(messages.network);
+                    return;
+                  }
+                  router.push('/app');
+                });
+              }}
+            >
+              {entering ? messages.submitting : messages.enterCompany}
+            </button>
+            <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
+              {messages.editSubscription}
+            </Link>
+          </>
         }
       />
+      {enterError ? <InlineAlert message={enterError} /> : null}
       {company.status === 'SUSPENDED' ? <InlineAlert tone="info" message={messages.suspendBody} /> : null}
       <dl className="facts">
         <div>

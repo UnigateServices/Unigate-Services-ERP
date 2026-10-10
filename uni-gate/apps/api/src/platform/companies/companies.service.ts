@@ -1,7 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuditAction, CompanyStatus, Prisma, RecordStatus } from '@prisma/client';
 import { ErrorCode, MODULE_KEYS, isSubscriptionExpired, todayInDamascus, type ModuleKey } from '@unigate/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SessionService } from '../../auth/session.service';
+import type { RequestAuth } from '../../auth/auth.service';
 import { ROLE_PRESETS } from './role-presets';
 
 type CompanyRecord = {
@@ -24,7 +26,10 @@ export type PlatformCompanyDto = {
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessions: SessionService,
+  ) {}
 
   async list(query: { page?: number; pageSize?: number; q?: string; status?: CompanyStatus }) {
     const page = query.page ?? 1;
@@ -156,6 +161,52 @@ export class CompaniesService {
       return company;
     });
     return toCompanyDto(company);
+  }
+
+  async enter(companyId: string, auth: RequestAuth) {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+    if (!company) throw this.notFound();
+    await this.prisma.auditEntry.create({
+      data: {
+        actorUserId: auth.userId,
+        companyId,
+        action: AuditAction.ENTER,
+        targetType: 'company',
+        targetId: companyId,
+      },
+    });
+    return this.reissue(auth, companyId);
+  }
+
+  async leave(companyId: string, auth: RequestAuth) {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+    if (!company) throw this.notFound();
+    if (auth.actingCompanyId !== companyId) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: 'Support context does not match this company.',
+      });
+    }
+    return this.reissue(auth, null);
+  }
+
+  private reissue(auth: RequestAuth, actingCompanyId: string | null) {
+    if (!auth.expiresAt) {
+      throw new UnauthorizedException({
+        code: ErrorCode.UNAUTHORIZED,
+        message: 'Authentication is required.',
+      });
+    }
+    const token = this.sessions.sign(
+      {
+        userId: auth.userId,
+        actor: 'platform',
+        authVersion: auth.authVersion,
+        actingCompanyId,
+      },
+      { expiresAt: auth.expiresAt },
+    );
+    return { token, expiresAt: auth.expiresAt };
   }
 
   private async bootstrap(

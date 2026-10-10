@@ -21,7 +21,7 @@ import {
   visibleLocations,
 } from '@/lib/permissions';
 import { usePreferences } from '@/lib/preferences';
-import { changeOwnPassword, forgetSupportCompany, loadSession } from '@/lib/session';
+import { changeOwnPassword, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
 import {
   createLocation,
@@ -862,7 +862,6 @@ export function AccountScreen() {
               setMessage(result.code === 'VALIDATION_ERROR' ? messages.passwordWeak : messages.wrongCredentials);
               return;
             }
-            forgetSupportCompany();
             router.replace(session.actor === 'platform' ? '/login/platform' : '/login');
           });
         }}
@@ -877,7 +876,7 @@ export function AccountScreen() {
       </form>
     </>
   );
-  if (session.companyId) {
+  if (session.actor === 'member' && session.companyId) {
     return (
       <AppShell session={session} items={items}>
         {body}

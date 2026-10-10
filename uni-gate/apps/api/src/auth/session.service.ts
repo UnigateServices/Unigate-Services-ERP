@@ -10,6 +10,8 @@ export type SessionClaims = {
   actor: SessionActor;
   authVersion: number;
   actingCompanyId: string | null;
+  /** Unix seconds. Present after verification. Omitted when issuing a fresh login. */
+  expiresAt?: number;
 };
 
 type TokenBody = {
@@ -24,12 +26,17 @@ type TokenBody = {
 export class SessionService {
   constructor(private readonly config: ConfigService) {}
 
-  sign(claims: SessionClaims, ttlSeconds = ACCESS_MAX_AGE_MS / 1000): string {
+  sign(claims: SessionClaims, ttlSeconds: number | { expiresAt?: number; ttlSeconds?: number } = ACCESS_MAX_AGE_MS / 1000): string {
+    const now = Math.floor(Date.now() / 1000);
+    const exp =
+      typeof ttlSeconds === 'number'
+        ? now + ttlSeconds
+        : ttlSeconds.expiresAt ?? now + (ttlSeconds.ttlSeconds ?? ACCESS_MAX_AGE_MS / 1000);
     const body: TokenBody = {
       sub: claims.userId,
       actor: claims.actor,
       ver: claims.authVersion,
-      exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+      exp,
     };
     if (claims.actingCompanyId) body.actingCompanyId = claims.actingCompanyId;
     const encoded = Buffer.from(JSON.stringify(body)).toString('base64url');
@@ -62,6 +69,7 @@ export class SessionService {
       actor: body.actor,
       authVersion: body.ver,
       actingCompanyId: typeof body.actingCompanyId === 'string' ? body.actingCompanyId : null,
+      expiresAt: body.exp,
     };
   }
 
