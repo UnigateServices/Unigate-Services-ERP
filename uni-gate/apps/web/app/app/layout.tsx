@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/shell';
 import { usePreferences } from '@/lib/preferences';
@@ -7,9 +8,11 @@ import { useGate } from '@/lib/use-gate';
 
 export default function CustomerAppLayout({ children }: { children: ReactNode }) {
   const session = useGate('app');
+  const pathname = usePathname();
   const { messages } = usePreferences();
   if (!session) return <p role="status">{messages.checking}</p>;
-  if (session.actor === 'platform') {
+  const connected = pathname === '/app' || pathname === '/app/branches' || pathname.startsWith('/app/branches/');
+  if (session.actor === 'platform' && !connected) {
     const company = session.actingCompany;
     return (
       <AppShell

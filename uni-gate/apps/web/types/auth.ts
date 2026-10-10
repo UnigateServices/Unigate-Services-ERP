@@ -34,6 +34,7 @@ export type AppSession = {
   userId: string;
   name: string;
   companyId: string | null;
+  companyName: string | null;
   roleKey: string | null;
   roleName: string | null;
   locationId: string | null;

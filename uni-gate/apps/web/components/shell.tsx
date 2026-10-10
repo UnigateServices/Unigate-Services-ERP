@@ -6,7 +6,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { LanguageSwitcher, ThemeModeSwitcher } from '@/components/preference-switchers';
 import { usePreferences } from '@/lib/preferences';
 import { leaveSupportCompany, logout } from '@/lib/session';
-import { getCompany } from '@/services/directory';
 import type { AppSession } from '@/types/auth';
 
 type NavItem = { href: string; label: string };
@@ -122,9 +121,8 @@ export function AppShell({
 }) {
   const { messages } = usePreferences();
   const support = session.actor === 'platform' ? session.actingCompany : null;
-  const company = !support && session.companyId ? getCompany(session.companyId) : null;
-  const companyName = support?.name ?? company?.name;
-  const suspended = (support?.status ?? company?.status) === 'SUSPENDED';
+  const companyName = support?.name ?? session.companyName;
+  const suspended = support?.status === 'SUSPENDED';
   const banner =
     session.actor === 'platform' && support ? (
       <SupportBanner companyId={support.id} companyName={support.name} suspended={suspended} />

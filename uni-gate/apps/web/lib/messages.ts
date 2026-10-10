@@ -60,6 +60,7 @@ export type Messages = {
   retry: string;
   save: string;
   saved: string;
+  saving: string;
   cancel: string;
   confirm: string;
   back: string;
@@ -105,6 +106,7 @@ export type Messages = {
   enterBody: string;
   countsBranches: string;
   countsUsers: string;
+  countsUsersLater: string;
   enabledModules: string;
   none: string;
   suspendCompany: string;
@@ -248,6 +250,7 @@ const ar: Messages = {
   retry: 'إعادة المحاولة',
   save: 'حفظ',
   saved: 'تم الحفظ.',
+  saving: 'جاري الحفظ',
   cancel: 'رجوع',
   confirm: 'تأكيد',
   back: 'العودة إلى اللوحة',
@@ -281,7 +284,7 @@ const ar: Messages = {
   modulesSection: 'الوحدات',
   modulesHint: 'يمكن تركها كلها مغلقة.',
   branchHint: 'يُنشأ فرع واحد بنفس الاسم داخل نفس الاشتراك.',
-  pendingAreas: 'الفروع والمستخدمون والأدوار والوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
+  pendingAreas: 'المستخدمون والأدوار والوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
   codeHint: 'أحرف إنجليزية صغيرة، ويُستخدم في الدخول.',
   codeInvalid: 'الرمز من حرفين إلى 32: أحرف صغيرة أو أرقام أو شرطة.',
   codeTaken: 'هذا الرمز مستخدم لشركة أخرى.',
@@ -293,6 +296,7 @@ const ar: Messages = {
   enterBody: 'سيُسجَّل الدخول. ترى كل الفروع، والتعديل والحذف مباشر دون موافقة الموظف.',
   countsBranches: 'الفروع',
   countsUsers: 'المستخدمون',
+  countsUsersLater: 'يُربط لاحقاً',
   enabledModules: 'وحدات مفتوحة',
   none: 'لا يوجد',
   suspendCompany: 'إيقاف الشركة',
@@ -436,6 +440,7 @@ const en: Messages = {
   retry: 'Try again',
   save: 'Save',
   saved: 'Saved.',
+  saving: 'Saving',
   cancel: 'Back',
   confirm: 'Confirm',
   back: 'Back to the dashboard',
@@ -469,7 +474,7 @@ const en: Messages = {
   modulesSection: 'Modules',
   modulesHint: 'You can leave all of them off.',
   branchHint: 'One branch is created with the same name, inside the same subscription.',
-  pendingAreas: 'Branches, users, roles, and modules connect in a later phase. Sample data is not shown here.',
+  pendingAreas: 'Users, roles, and modules connect in a later phase. Sample data is not shown here.',
   codeHint: 'Lowercase English letters. Used at sign-in.',
   codeInvalid: 'Use 2–32 characters: lowercase letters, digits, or a hyphen.',
   codeTaken: 'Another company already uses this code.',
@@ -481,6 +486,7 @@ const en: Messages = {
   enterBody: 'This entry is logged. You see every branch, and edits and deletes skip employee approval.',
   countsBranches: 'Branches',
   countsUsers: 'Users',
+  countsUsersLater: 'Connects later',
   enabledModules: 'Enabled modules',
   none: 'None',
   suspendCompany: 'Suspend company',

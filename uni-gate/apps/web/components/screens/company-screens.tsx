@@ -326,6 +326,9 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
             >
               {entering ? messages.submitting : messages.enterCompany}
             </button>
+            <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/branches`}>
+              {messages.navBranches}
+            </Link>
             <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
               {messages.editSubscription}
             </Link>

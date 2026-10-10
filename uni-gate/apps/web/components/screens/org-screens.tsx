@@ -18,17 +18,13 @@ import {
   canSeeRoles,
   locationLocked,
   seesAllBranches,
-  visibleLocations,
 } from '@/lib/permissions';
 import { usePreferences } from '@/lib/preferences';
 import { changeOwnPassword, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
 import {
-  createLocation,
   createRole,
   createUser,
-  getCompany,
-  getLocation,
   getRole,
   getUserRow,
   listLocations,
@@ -38,10 +34,17 @@ import {
   passwordIssue,
   resetUserPassword,
   roleKeyIssue,
-  updateLocation,
   updateRole,
   updateUser,
 } from '@/services/directory';
+import { getPlatformCompany } from '@/services/platform-companies';
+import {
+  createPlatformLocation,
+  listCustomerLocations,
+  listPlatformLocations,
+  updatePlatformLocation,
+  type Branch,
+} from '@/services/locations';
 import type { AppSession, ModuleKey, VisibilityScope } from '@/types/auth';
 import { MODULE_KEYS } from '@/types/auth';
 
@@ -73,20 +76,57 @@ export function BranchesScreen({ companyId, chrome }: { companyId: string; chrom
   const { messages } = usePreferences();
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  if (!session) return <p role="status">{messages.checking}</p>;
+  const [rows, setRows] = useState<Branch[]>([]);
+  const [companyName, setCompanyName] = useState('');
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (chrome === 'platform') {
+        const [company, listed] = await Promise.all([getPlatformCompany(companyId), listPlatformLocations(companyId)]);
+        if (cancelled) return;
+        if (!company.ok || !listed.ok) {
+          const code = !company.ok ? company.code : listed.ok ? '' : listed.code;
+          setMissing(code === 'NOT_FOUND');
+          setLoadError(code === 'NOT_FOUND' ? '' : messages.network);
+          setReady(true);
+          return;
+        }
+        setCompanyName(company.company.name);
+        setRows(listed.items);
+        setReady(true);
+        return;
+      }
+      const listed = await listCustomerLocations();
+      if (cancelled) return;
+      if (!listed.ok) {
+        setLoadError(listed.code === 'CONFLICT' ? messages.pendingAreas : messages.network);
+        setReady(true);
+        return;
+      }
+      setRows(listed.items);
+      setReady(true);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [chrome, companyId, messages.network, messages.pendingAreas]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
   if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
-  const company = getCompany(companyId);
-  if (!company) return <p>{messages.notFound}</p>;
-  const rows = visibleLocations(session, listLocations(companyId), companyId).filter((item) =>
-    item.name.toLocaleLowerCase().includes(q.trim().toLocaleLowerCase()),
-  );
-  const view = pageOf(rows, page);
+  const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
+  const filtered = rows.filter((item) => item.name.toLocaleLowerCase().includes(q.trim().toLocaleLowerCase()));
+  const view = pageOf(filtered, page);
   const base = chrome === 'platform' ? `/platform/companies/${companyId}/branches` : '/app/branches';
   return (
     <OrgFrame chrome={chrome} session={session} companyId={companyId}>
       <PageHeader
         title={messages.branchesTitle}
-        crumbs={crumbs(chrome, company.name, messages.branchesTitle, messages)}
+        crumbs={crumbs(chrome, displayName, messages.branchesTitle, messages)}
         actions={
           canCreateBranch(session) ? (
             <Link className="primary-button link-button" href={`${base}/new`}>
@@ -95,21 +135,26 @@ export function BranchesScreen({ companyId, chrome }: { companyId: string; chrom
           ) : null
         }
       />
-      <div className="filters">
-        <label>
-          {messages.search}
-          <input
-            value={q}
-            onChange={(event) => {
-              setQ(event.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-      </div>
-      {rows.length === 0 ? (
+      {loadError ? <InlineAlert message={loadError} /> : null}
+      {missing ? <p>{messages.notFound}</p> : null}
+      {!loadError && !missing ? (
+        <div className="filters">
+          <label>
+            {messages.search}
+            <input
+              value={q}
+              onChange={(event) => {
+                setQ(event.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+        </div>
+      ) : null}
+      {!loadError && !missing && filtered.length === 0 ? (
         <EmptyState text={q ? messages.noResults : messages.empty} />
-      ) : (
+      ) : null}
+      {!loadError && !missing && filtered.length > 0 ? (
         <div className="table-wrap">
           <table>
             <thead>
@@ -134,8 +179,8 @@ export function BranchesScreen({ companyId, chrome }: { companyId: string; chrom
             </tbody>
           </table>
         </div>
-      )}
-      <Pagination page={view.page} pages={view.pages} onPage={setPage} />
+      ) : null}
+      {!loadError && !missing ? <Pagination page={view.page} pages={view.pages} onPage={setPage} /> : null}
     </OrgFrame>
   );
 }
@@ -151,8 +196,17 @@ function OrgFrame({
   companyId: string;
   children: React.ReactNode;
 }) {
-  const items = useAppItems(session, companyId);
+  const { messages } = usePreferences();
+  const appItems = useAppItems(session, companyId);
   if (chrome === 'platform') return <PlatformShell session={session}>{children}</PlatformShell>;
+  const items =
+    session.actor === 'platform'
+      ? [
+          { href: '/platform', label: messages.navDashboard },
+          { href: '/platform/companies', label: messages.navCompanies },
+          { href: '/app/branches', label: messages.navBranches },
+        ]
+      : appItems;
   return (
     <AppShell session={session} items={items}>
       {children}
@@ -187,28 +241,111 @@ export function BranchFormScreen({
   const session = useGate(chrome);
   const router = useRouter();
   const { messages } = usePreferences();
-  const existing = branchId ? getLocation(branchId) : null;
-  const [name, setName] = useState(existing?.name ?? '');
-  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(existing?.status ?? 'ACTIVE');
+  const [name, setName] = useState('');
+  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [existing, setExisting] = useState<Branch | null>(null);
+  const [companyName, setCompanyName] = useState('');
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  if (!session) return <p role="status">{messages.checking}</p>;
-  const writable = canCreateBranch(session);
-  if (!writable && !existing) return <p>{messages.forbidden}</p>;
-  const base = chrome === 'platform' ? `/platform/companies/${companyId}/branches` : '/app/branches';
 
-  function onSubmit(event: FormEvent) {
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (chrome === 'platform') {
+        const company = await getPlatformCompany(companyId);
+        if (cancelled) return;
+        if (!company.ok) {
+          setMissing(company.code === 'NOT_FOUND');
+          setLoadError(company.code === 'NOT_FOUND' ? '' : messages.network);
+          setReady(true);
+          return;
+        }
+        setCompanyName(company.company.name);
+        if (!branchId) {
+          setReady(true);
+          return;
+        }
+        const listed = await listPlatformLocations(companyId);
+        if (cancelled) return;
+        if (!listed.ok) {
+          setMissing(listed.code === 'NOT_FOUND');
+          setLoadError(listed.code === 'NOT_FOUND' ? '' : messages.network);
+          setReady(true);
+          return;
+        }
+        const found = listed.items.find((item) => item.id === branchId) ?? null;
+        setExisting(found);
+        setMissing(!found);
+        if (found) {
+          setName(found.name);
+          setStatus(found.status);
+        }
+        setReady(true);
+        return;
+      }
+      const listed = await listCustomerLocations();
+      if (cancelled) return;
+      if (!listed.ok) {
+        setLoadError(listed.code === 'CONFLICT' ? messages.pendingAreas : messages.network);
+        setReady(true);
+        return;
+      }
+      if (!branchId) {
+        setReady(true);
+        return;
+      }
+      const found = listed.items.find((item) => item.id === branchId) ?? null;
+      setExisting(found);
+      setMissing(!found);
+      if (found) {
+        setName(found.name);
+        setStatus(found.status);
+      }
+      setReady(true);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId, chrome, companyId, messages.network, messages.pendingAreas]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  const writable = canCreateBranch(session);
+  const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
+  const base = chrome === 'platform' ? `/platform/companies/${companyId}/branches` : '/app/branches';
+  if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
+
+  async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!session || !writable) return;
+    if (!session || !writable || saving) return;
     if (!name.trim()) {
       setError(messages.required);
       return;
     }
-    const actor = actorOf(session);
-    if (!actor) return;
+    setSaving(true);
+    setError('');
     const result = existing
-      ? updateLocation(existing.id, { name, status }, actor)
-      : createLocation(companyId, name, actor);
+      ? await updatePlatformLocation(companyId, existing.id, { name: name.trim(), status })
+      : await createPlatformLocation(companyId, name.trim());
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.code === 'NAME_TAKEN' ? messages.nameTaken : messages.network);
+      return;
+    }
+    router.push(base);
+  }
+
+  async function deactivate() {
+    if (!session || !existing || saving) return;
+    setSaving(true);
+    setError('');
+    const result = await updatePlatformLocation(companyId, existing.id, { name: existing.name, status: 'INACTIVE' });
+    setSaving(false);
+    setConfirm(false);
     if (!result.ok) {
       setError(result.code === 'NAME_TAKEN' ? messages.nameTaken : messages.network);
       return;
@@ -218,29 +355,48 @@ export function BranchFormScreen({
 
   return (
     <OrgFrame chrome={chrome} session={session} companyId={companyId}>
-      <PageHeader title={existing ? messages.editBranch : messages.newBranch} />
-      {!writable ? <InlineAlert tone="info" message={messages.readOnly} /> : null}
-      <form className="stack-form" onSubmit={onSubmit} noValidate>
-        <FormField id="branch-name" label={messages.branchName} required error={error}>
-          <input id="branch-name" value={name} disabled={!writable} onChange={(event) => setName(event.target.value)} />
-        </FormField>
-        {existing && writable ? (
-          <FormField id="branch-status" label={messages.status}>
-            <select id="branch-status" value={status} onChange={(event) => setStatus(event.target.value as 'ACTIVE' | 'INACTIVE')}>
-              <option value="ACTIVE">{messages.active}</option>
-              <option value="INACTIVE">{messages.inactiveStatus}</option>
-            </select>
-          </FormField>
-        ) : null}
-        {writable ? <PrimaryButton>{messages.save}</PrimaryButton> : null}
-      </form>
-      {existing && writable && existing.status === 'ACTIVE' ? (
-        <section className="danger-zone">
-          <h2>{messages.dangerZone}</h2>
-          <button type="button" className="danger-button" onClick={() => setConfirm(true)}>
-            {messages.deactivate}
-          </button>
-        </section>
+      <PageHeader
+        title={existing ? (writable ? messages.editBranch : messages.branchesTitle) : messages.newBranch}
+        crumbs={crumbs(chrome, displayName, messages.branchesTitle, messages)}
+      />
+      {loadError ? <InlineAlert message={loadError} /> : null}
+      {!loadError && (missing || (!writable && !existing)) ? <p>{missing ? messages.notFound : messages.forbidden}</p> : null}
+      {!loadError && !missing && (existing || writable) ? (
+        <>
+          {!writable ? <InlineAlert tone="info" message={messages.readOnly} /> : null}
+          <form className="stack-form" onSubmit={onSubmit} noValidate>
+            <FormField id="branch-name" label={messages.branchName} required error={error}>
+              <input id="branch-name" value={name} disabled={!writable || saving} onChange={(event) => setName(event.target.value)} />
+            </FormField>
+            {existing && writable ? (
+              <FormField id="branch-status" label={messages.status}>
+                <select
+                  id="branch-status"
+                  value={status}
+                  disabled={saving}
+                  onChange={(event) => setStatus(event.target.value as 'ACTIVE' | 'INACTIVE')}
+                >
+                  <option value="ACTIVE">{messages.active}</option>
+                  <option value="INACTIVE">{messages.inactiveStatus}</option>
+                </select>
+              </FormField>
+            ) : null}
+            {existing && !writable ? (
+              <p>
+                {messages.status}: <StatusBadge status={existing.status} />
+              </p>
+            ) : null}
+            {writable ? <PrimaryButton disabled={saving}>{saving ? messages.saving : messages.save}</PrimaryButton> : null}
+          </form>
+          {existing && writable && existing.status === 'ACTIVE' ? (
+            <section className="danger-zone">
+              <h2>{messages.dangerZone}</h2>
+              <button type="button" className="danger-button" disabled={saving} onClick={() => setConfirm(true)}>
+                {messages.deactivate}
+              </button>
+            </section>
+          ) : null}
+        </>
       ) : null}
       <ConfirmDialog
         open={confirm}
@@ -249,11 +405,7 @@ export function BranchFormScreen({
         confirmLabel={messages.deactivate}
         onClose={() => setConfirm(false)}
         onConfirm={() => {
-          if (!session || !existing) return;
-          const actor = actorOf(session);
-          if (!actor) return;
-          updateLocation(existing.id, { name: existing.name, status: 'INACTIVE' }, actor);
-          router.push(base);
+          void deactivate();
         }}
       />
     </OrgFrame>
@@ -684,13 +836,38 @@ export function RoleFormScreen({
 export function CustomerDashboard() {
   const session = useGate('app');
   const { messages } = usePreferences();
-  const items = useAppItems(session, session?.companyId ?? null);
-  if (!session || !session.companyId) return <p role="status">{messages.checking}</p>;
-  const company = getCompany(session.companyId);
-  if (!company) return <p>{messages.notFound}</p>;
-  const enabled = listModules(company.id).filter((item) => item.enabled);
-  const branchCount = visibleLocations(session, listLocations(company.id), company.id).length;
-  const userCount = canManageUsers(session) ? listUsers(company.id).filter((user) => seesAllBranches(session) || user.locationId === session.locationId).length : null;
+  const appItems = useAppItems(session, session?.companyId ?? null);
+  const [branchCount, setBranchCount] = useState<number | null>(null);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!session?.companyId) return;
+    let cancelled = false;
+    void listCustomerLocations().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setLoadError(result.code === 'CONFLICT' ? messages.pendingAreas : messages.network);
+        setBranchCount(null);
+        return;
+      }
+      setLoadError('');
+      setBranchCount(result.items.length);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages.network, messages.pendingAreas, session?.companyId]);
+
+  if (!session) return <p role="status">{messages.checking}</p>;
+  if (!session.companyId) return <p className="field-hint">{messages.pendingAreas}</p>;
+  const items =
+    session.actor === 'platform'
+      ? [
+          { href: '/platform', label: messages.navDashboard },
+          { href: '/platform/companies', label: messages.navCompanies },
+          { href: '/app/branches', label: messages.navBranches },
+        ]
+      : appItems;
   const scope =
     session.visibility === 'PLATFORM' || session.visibility === 'ALL_BRANCHES'
       ? messages.scopeAll
@@ -701,37 +878,24 @@ export function CustomerDashboard() {
     <AppShell session={session} items={items}>
       <PageHeader title={messages.welcome} />
       <p>
-        {company.name}
+        {session.companyName}
         {session.roleName ? ` — ${messages.yourRole}: ${session.roleName}` : ''}
         {` — ${messages.yourScope}: ${scope}`}
       </p>
+      {loadError ? <InlineAlert message={loadError} /> : null}
       <div className="stat-row">
-        <div className="stat-link">
-          <strong>{branchCount}</strong>
+        <Link className="stat-link" href="/app/branches">
+          <strong>{branchCount === null ? '…' : branchCount}</strong>
           <span>{messages.countsBranches}</span>
-        </div>
-        {userCount !== null ? (
+        </Link>
+        {session.canManageUsers ? (
           <div className="stat-link">
-            <strong>{userCount}</strong>
+            <strong>{messages.countsUsersLater}</strong>
             <span>{messages.countsUsers}</span>
           </div>
         ) : null}
       </div>
-      <h2>{messages.enabledModules}</h2>
-      {enabled.length === 0 ? (
-        <EmptyState text={messages.noModules} />
-      ) : (
-        <ul className="module-list">
-          {enabled.map((item) => (
-            <li key={item.moduleKey}>
-              <Link href={`/app/modules/${item.moduleKey}`}>
-                {moduleLabel(item.moduleKey, messages)}
-                <small>{messages.notReadyYet}</small>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      <p className="field-hint">{messages.pendingAreas}</p>
     </AppShell>
   );
 }
