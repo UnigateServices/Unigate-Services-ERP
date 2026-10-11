@@ -1,6 +1,6 @@
 # Unigate handoff
 
-Continuation document for a new Agent. It describes the repository after Phase 5 manual acceptance on 10 October 2026. It does not replace reading the code.
+Continuation document for a new Agent. It describes the repository after Phase 6 manual acceptance on 11 October 2026. It does not replace reading the code.
 
 Related earlier snapshot: `UNIGATE_CURRENT_STATE.md` (written before the backend foundation existed). Where they differ, trust this file and the current tree.
 
@@ -8,9 +8,9 @@ Related earlier snapshot: `UNIGATE_CURRENT_STATE.md` (written before the backend
 
 ## 1. Current completed phase and exact status
 
-**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, and Phase 5 branch and location management.
+**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, and Phase 6 role and permission management.
 
-**Not started:** Phase 6. Do not start it until the user explicitly says so. User, role, module-edit, and audit-list APIs, and finance, are still not built.
+**Not started:** Phase 7. Do not start it until the user explicitly says so. User and membership APIs, module editing, the audit list, and finance are still not built.
 
 **Git**
 
@@ -23,9 +23,10 @@ Related earlier snapshot: `UNIGATE_CURRENT_STATE.md` (written before the backend
 | Frontend prototype | `3cd02d6` |
 | Phase 3 companies | `c92edaa` — platform company administration |
 | Phase 4 support | `be9c1d6` — signed support context |
+| Phase 5 branches | `ace8c50` — branch and location management |
 | Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
-Phase 5 branch and location management is committed with this handoff update. A fresh clone includes authentication, platform company routes, server-signed support enter/leave, and PostgreSQL-backed branches. Do not reset or clean the tree.
+Phase 6 role and permission management is committed with this handoff update. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, and PostgreSQL-backed roles. Do not reset or clean the tree.
 
 ---
 
@@ -39,13 +40,14 @@ Phase 5 branch and location management is committed with this handoff update. A 
 - NestJS platform company routes under `uni-gate/apps/api/src/platform/`.
 - Platform support context is `actingCompanyId` on the signed `ug_access` cookie. Enter and leave are platform-only. `ug_support_company` is not an authority.
 - Branch and location data is server-backed through PostgreSQL for Platform Administration and for customer or support context. The domain model remains `Location`. The UI calls it Branch / فرع.
+- Roles and permission metadata are PostgreSQL-backed for Platform Administration and for customer or support context. Role keys are unique per company. Members can read roles only when the current role has `canManageUsers`. Members cannot create or edit roles. Platform operators can.
 - Company creation is one transaction: company, first branch named like the company, the selected role preset, six `CompanyModule` rows, and a `CREATE` audit row.
-- Prisma schema and three migrations. No Phase 5 migration.
+- Prisma schema and three migrations. No Phase 6 migration.
 - Development-only seed: `npm run db:seed:dev` from `uni-gate`. It refuses `NODE_ENV=production`.
 
 **Planned, not implemented**
 
-- Standalone role, user, module-edit, and audit-list HTTP APIs.
+- User, membership, module-edit, and audit-list HTTP APIs.
 - HTTP route for an administrator password reset. `PasswordService.resetPassword` exists and is tested. `POST /api/users/:id/password` is still 404.
 - An audit list HTTP API. Entering support writes an `ENTER` row, but the audit screen is still mock.
 - Finance, exchange, gold, aviation, engineering, and HR business logic.
@@ -63,15 +65,15 @@ Phase 5 branch and location management is committed with this handoff update. A 
 - Platform support context is the signed `ug_access` cookie. `actingCompanyId` is set by `POST /api/platform/companies/:companyId/enter` and cleared by `POST /api/platform/companies/:companyId/leave`. The browser does not choose the acting company.
 - `ug_support_company` is not an authority. `loadSession` deletes any leftover value. It does not decide support context.
 - Company detail offers **الدخول إلى الشركة**. That calls enter, then opens `/app`. The support banner reads the company from `/api/auth/me`. Leave returns to `/platform/companies/:companyId` and keeps the operator signed in.
-- While support is open, `/platform` stays the platform shell and shows that a support session is open. `/app` and `/app/branches` show the acting company's real branches. Other `/app` routes for a platform operator still show a pending note and do not render mock users, roles, or modules.
-- A member session still uses `Membership` and does not use `actingCompanyId`. Branch lists for a member come from `GET /api/locations`. The seeded TRADIVIA manager is `ALL_BRANCHES`, so that account sees every TRADIVIA branch and cannot create or edit one.
-- Platform company screens and platform branch screens do not read companies or branches from `ug_mock_db`.
-- Direct URLs for user, role, and module screens still use the mock store. The user form still lists mock locations because users are not migrated.
+- While support is open, `/platform` stays the platform shell and shows that a support session is open. `/app`, `/app/branches`, and `/app/roles` use the acting company. Other `/app` routes for a platform operator still show a pending note and do not render mock users or modules.
+- A member session still uses `Membership` and does not use `actingCompanyId`. Branch lists come from `GET /api/locations`. Role lists come from `GET /api/roles` and are read-only. The seeded TRADIVIA manager is `GENERAL_MANAGER` with `ALL_BRANCHES` and `canManageUsers`, so that account sees every TRADIVIA branch and the role list, and cannot create or edit either.
+- Platform company, branch, and role screens do not read those records from `ug_mock_db`.
+- User screens show a pending note. They do not list mock users or mock roles, and they do not write `ug_mock_db`. Module screens and the audit screen still use the mock store.
 - The audit screen and the dashboard's recent-activity table still use the mock log. Recent activity is text only and does not open a company.
-- Directory mocks remain for users, roles, module editing, and audit. Converted branch screens have one source of truth: PostgreSQL.
+- Directory mocks remain for modules and audit. Converted branch and role screens have one source of truth: PostgreSQL.
 - The customer dashboard branch count comes from the authorized location list. Its user count says the figure connects later. It is not a mock user total. The platform company detail branch count remains the PostgreSQL count and includes inactive branches.
 - `readUserPassword` remains in the mock directory and must never become an API. The account screen no longer uses it.
-- An administrator resetting another user's password in the user form still writes the mock database.
+- An administrator password reset is still not a public route. The user screen does not write one.
 
 ---
 
@@ -111,7 +113,23 @@ Customer location route:
 
 There is no branch delete route. Deactivation is `INACTIVE`. Inactive locations stay stored and stay visible inside the caller's scope. An inactive location does not block member login. Branch names are unique per company with a case-sensitive comparison, matching the previous screen and `locations_company_id_name_key`. The same name may exist in another company. Visibility is applied before rows leave the server: a platform operator in support and a member with `ALL_BRANCHES` see every branch of that company; `BRANCH` and `OWN` see only the membership location.
 
-A member receives `403` `FORBIDDEN` on these routes. A missing cookie receives `401`. `priceUsd` is a decimal string for PostgreSQL `numeric(12,2)`. A past `expiresOn` does not change `ACTIVE` to `SUSPENDED`. Role presets are `tradivia` (four roles) and `simple` (`OWNER` and `STAFF`) in `role-presets.ts`. They are not global authorization.
+Platform role routes, platform-operator only. Writes from `/app` reuse these routes with the company id from the signed session:
+
+| Method | Path | Behavior |
+|---|---|---|
+| GET | `/api/platform/companies/:companyId/roles` | `{ items }` of role fields, ordered by name, then id. Includes `companyId`. Unknown company is `404` `NOT_FOUND`. |
+| POST | `/api/platform/companies/:companyId/roles` | Body is `name`, `key`, `canManageUsers`, `visibilityScope`, `editRequiresApproval`, and `deleteRequiresApproval`. Key must match `^[A-Z][A-Z0-9_]{1,40}$`. Duplicate key in the same company is `409` `KEY_TAKEN`. Writes audit `CREATE` with target type `role`. |
+| PATCH | `/api/platform/companies/:companyId/roles/:roleId` | Same fields. A role that is not in this company is `404` `NOT_FOUND`. Writes audit `UPDATE`. |
+
+Customer role route:
+
+| Method | Path | Behavior |
+|---|---|---|
+| GET | `/api/roles` | Company comes from the session. A member uses `Membership` and must currently have `canManageUsers`. Otherwise `403` `FORBIDDEN`. A platform operator uses `actingCompanyId`. No acting company is `409` `CONFLICT`. The response does not include company metadata. A client `companyId` does not change scope. |
+
+There is no role delete route and no separate role-detail route. Role keys are unique per company through `roles_company_id_key_key`. The same key may exist in another company. Keys are not case-folded. A `visibilityScope` change that would make an existing membership invalid is `409` `CONFLICT`, and membership rows are not rewritten. `ALL_BRANCHES` requires `locationId` null. `BRANCH` and `OWN` require a location. `canManageUsers` and `visibilityScope` are read from the current role row on the next request. A role edit does not change `authVersion`. `editRequiresApproval` and `deleteRequiresApproval` are stored and returned. They do not run a finance approval workflow.
+
+A member receives `403` `FORBIDDEN` on the platform routes above. A missing cookie receives `401`. `priceUsd` is a decimal string for PostgreSQL `numeric(12,2)`. A past `expiresOn` does not change `ACTIVE` to `SUSPENDED`. Role presets are `tradivia` (four roles) and `simple` (`OWNER` and `STAFF`) in `role-presets.ts`. They are not global authorization. The development seed fills those preset roles for the local sample companies.
 
 `GET /api/health` still returns `{ ok: true }`.
 
@@ -192,7 +210,7 @@ If the server is down:
 
 Customer requests must not trust a client-supplied company id. Location lists already filter by the server session before rows leave the API. User lists do not have that route yet.
 
-Creating and editing branches is a platform route. Members see branches and cannot create them. Creating and editing roles remains a Unigate platform operation in the product rules. The role routes are not built.
+Creating and editing branches is a platform route. Members see branches and cannot create them. Creating and editing roles is also a platform route. Members with `canManageUsers` can read roles and cannot create or edit them.
 
 ---
 
@@ -204,16 +222,16 @@ Do not start Unigate from that schema. Do not import its auth. Do not merge its 
 
 ---
 
-## 10. Tests and build results from Phase 5 acceptance
+## 10. Tests and build results from Phase 6 acceptance
 
-Re-run on 10 October 2026 after branch and location management:
+Re-run on 10 October 2026 after role and permission management:
 
 | Command | Result |
 |---|---|
 | `prisma validate` | Schema valid |
-| `prisma migrate status` | 3 migrations, schema up to date. No Phase 5 migration. |
+| `prisma migrate status` | 3 migrations, schema up to date. No Phase 6 migration. |
 | `tsc --noEmit` for shared, database, API, and web | Exit 0 |
-| `npm run test -w @unigate/api` | 8 suites passed, 34 tests passed |
+| `npm run test -w @unigate/api` | 9 suites passed, 40 tests passed |
 | `nest build` | Exit 0 |
 | `next build` | Exit 0 |
 
@@ -234,11 +252,12 @@ Do not commit `.env`, PostgreSQL data directories, `unigate-postgres` logs, or J
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree.
-2. Wait until the user explicitly starts **Phase 6** and names its scope.
-3. Do not assume Phase 6 is users, roles, modules, or the audit list. Those are unbuilt, but the user chooses the next phase.
+2. Wait until the user explicitly starts **Phase 7** and names its scope.
+3. Do not assume Phase 7 is users, memberships, modules, or the audit list. Those are unbuilt, but the user chooses the next phase.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
 6. Branch data is already `Location` in PostgreSQL. Do not put branch lists back in `ug_mock_db`. Keep branch-name uniqueness case-sensitive unless the user changes that rule. Do not make an inactive location block login unless the user asks for that rule.
+7. Roles are already PostgreSQL-backed. Do not put role lists back in `ug_mock_db`. Do not let members create or edit roles. Do not increment `authVersion` for a role edit. Do not treat approval flags as a finance workflow.
 
 Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start commands are in section 6. Web: `npm run dev:web`. API: `npm run dev:api`. Both are run from `uni-gate`.
 
@@ -246,7 +265,10 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 
 ## DO NOT DO
 
-- Do not start Phase 6 until the user explicitly says so.
+- Do not start Phase 7 until the user explicitly says so.
+- Do not let a member create or edit a role.
+- Do not increment `authVersion` when only role permissions change.
+- Do not implement finance approval from `editRequiresApproval` or `deleteRequiresApproval`.
 - Do not treat an inactive location as a login block unless the user asks for that rule.
 - Do not make branch names case-insensitive unless the user changes that rule.
 - Do not treat `ug_support_company` as support authority.

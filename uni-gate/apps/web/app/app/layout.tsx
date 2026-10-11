@@ -11,7 +11,12 @@ export default function CustomerAppLayout({ children }: { children: ReactNode })
   const pathname = usePathname();
   const { messages } = usePreferences();
   if (!session) return <p role="status">{messages.checking}</p>;
-  const connected = pathname === '/app' || pathname === '/app/branches' || pathname.startsWith('/app/branches/');
+  const connected =
+    pathname === '/app' ||
+    pathname === '/app/branches' ||
+    pathname.startsWith('/app/branches/') ||
+    pathname === '/app/roles' ||
+    pathname.startsWith('/app/roles/');
   if (session.actor === 'platform' && !connected) {
     const company = session.actingCompany;
     return (

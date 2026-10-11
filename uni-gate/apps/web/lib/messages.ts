@@ -170,6 +170,7 @@ export type Messages = {
   roleKeyHint: string;
   roleKeyInvalid: string;
   keyTaken: string;
+  scopeConflict: string;
   manageUsersFlag: string;
   editApproval: string;
   deleteApproval: string;
@@ -284,7 +285,7 @@ const ar: Messages = {
   modulesSection: 'الوحدات',
   modulesHint: 'يمكن تركها كلها مغلقة.',
   branchHint: 'يُنشأ فرع واحد بنفس الاسم داخل نفس الاشتراك.',
-  pendingAreas: 'المستخدمون والأدوار والوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
+  pendingAreas: 'المستخدمون والوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
   codeHint: 'أحرف إنجليزية صغيرة، ويُستخدم في الدخول.',
   codeInvalid: 'الرمز من حرفين إلى 32: أحرف صغيرة أو أرقام أو شرطة.',
   codeTaken: 'هذا الرمز مستخدم لشركة أخرى.',
@@ -360,6 +361,7 @@ const ar: Messages = {
   roleKeyHint: 'بالإنجليزية الكبيرة، مثل GENERAL_MANAGER.',
   roleKeyInvalid: 'المفتاح يبدأ بحرف كبير، ثم حروف أو أرقام أو شرطة سفلية.',
   keyTaken: 'هذا المفتاح مستخدم داخل الشركة.',
+  scopeConflict: 'يجب تعديل المستخدمين المعيّنين قبل تغيير نطاق هذا الدور.',
   manageUsersFlag: 'إدارة المستخدمين',
   editApproval: 'التعديل يحتاج موافقة',
   deleteApproval: 'الحذف يحتاج موافقة',
@@ -474,7 +476,7 @@ const en: Messages = {
   modulesSection: 'Modules',
   modulesHint: 'You can leave all of them off.',
   branchHint: 'One branch is created with the same name, inside the same subscription.',
-  pendingAreas: 'Users, roles, and modules connect in a later phase. Sample data is not shown here.',
+  pendingAreas: 'Users and modules connect in a later phase. Sample data is not shown here.',
   codeHint: 'Lowercase English letters. Used at sign-in.',
   codeInvalid: 'Use 2–32 characters: lowercase letters, digits, or a hyphen.',
   codeTaken: 'Another company already uses this code.',
@@ -550,6 +552,7 @@ const en: Messages = {
   roleKeyHint: 'Uppercase English, such as GENERAL_MANAGER.',
   roleKeyInvalid: 'Start with a capital letter, then letters, digits, or underscores.',
   keyTaken: 'This key is already used in the company.',
+  scopeConflict: 'Assigned users must be made compatible before this role scope can change.',
   manageUsersFlag: 'Manage users',
   editApproval: 'Edits edits need approval',
   deleteApproval: 'Its deletes need approval',

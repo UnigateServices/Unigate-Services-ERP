@@ -11,6 +11,7 @@ import path from 'path';
 import { CompanyStatus, PrismaClient, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
 import { passwordIssue, todayInDamascus } from '@unigate/shared';
 import * as bcrypt from 'bcrypt';
+import { ROLE_PRESETS } from '../src/platform/companies/role-presets';
 
 const root = path.resolve(__dirname, '../../..');
 loadEnv(path.join(root, '.env'));
@@ -59,6 +60,7 @@ async function main() {
     displayName: memberName,
     password: memberPassword,
   });
+  await ensurePresetRoles('co_tradivia', 'tradivia');
   await ensureCustomer({
     companyId: 'co_ofoq',
     code: 'ofoq',
@@ -76,6 +78,7 @@ async function main() {
     displayName: 'owner',
     password: ownerPassword,
   });
+  await ensurePresetRoles('co_ofoq', 'simple');
   await ensureCustomer({
     companyId: 'co_expired',
     code: 'expired',
@@ -93,6 +96,7 @@ async function main() {
     displayName: 'owner',
     password: ownerPassword,
   });
+  await ensurePresetRoles('co_expired', 'simple');
   await ensureCustomer({
     companyId: 'co_lastday',
     code: 'lastday',
@@ -110,6 +114,7 @@ async function main() {
     displayName: 'owner',
     password: ownerPassword,
   });
+  await ensurePresetRoles('co_lastday', 'simple');
   console.log('Development identities are ready. Passwords were read from the environment and were not printed.');
   console.log(`Platform username: ${platformUsername}`);
   console.log(`Active company code: tradivia, username: ${memberUsername}`);
@@ -242,6 +247,26 @@ async function ensureCustomer(input: {
       locationId: null,
     },
   });
+}
+
+async function ensurePresetRoles(companyId: string, preset: 'tradivia' | 'simple') {
+  for (const role of ROLE_PRESETS[preset]) {
+    const existing = await prisma.role.findFirst({ where: { companyId, key: role.key } });
+    if (existing) {
+      await prisma.role.update({
+        where: { id: existing.id },
+        data: {
+          name: role.name,
+          canManageUsers: role.canManageUsers,
+          visibilityScope: role.visibilityScope,
+          editRequiresApproval: role.editRequiresApproval,
+          deleteRequiresApproval: role.deleteRequiresApproval,
+        },
+      });
+      continue;
+    }
+    await prisma.role.create({ data: { companyId, ...role } });
+  }
 }
 
 async function hashIfNeeded(currentHash: string | undefined, password: string) {

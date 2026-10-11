@@ -1,10 +1,13 @@
 'use client';
 
 import { RoleFormScreen } from '@/components/screens/org-screens';
+import { usePreferences } from '@/lib/preferences';
 import { useGate } from '@/lib/use-gate';
 
 export default function NewAppRolePage() {
   const session = useGate('app');
-  if (!session?.companyId) return null;
+  const { messages } = usePreferences();
+  if (!session) return <p role="status">{messages.checking}</p>;
+  if (!session.companyId) return <p className="field-hint">{messages.pendingAreas}</p>;
   return <RoleFormScreen companyId={session.companyId} chrome="app" />;
 }
