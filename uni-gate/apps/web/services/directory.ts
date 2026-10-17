@@ -381,10 +381,6 @@ export function updateUser(
   return { ok: true as const, financeAccess: financeAccessFor(role.key) };
 }
 
-export function readUserPassword(userId: string) {
-  return loadDb().users.find((item) => item.id === userId)?.password ?? null;
-}
-
 export function resetUserPassword(companyId: string, userId: string, password: string, actor: ActorRef | null) {
   const db = loadDb();
   const membership = db.memberships.find((item) => item.companyId === companyId && item.userId === userId);

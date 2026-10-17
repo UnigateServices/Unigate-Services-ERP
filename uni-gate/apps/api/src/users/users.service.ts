@@ -1,0 +1,454 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuditAction, Prisma, RecordStatus, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
+import { ErrorCode, passwordIssue } from '@unigate/shared';
+import type { RequestAuth } from '../auth/auth.service';
+import { PasswordService } from '../auth/password.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+export type CustomerUserDto = {
+  id: string;
+  name: string;
+  username: string;
+  email: string | null;
+  phone: string | null;
+  status: UserStatus;
+  role: {
+    id: string;
+    key: string;
+    name: string;
+    visibilityScope: VisibilityScope;
+    canManageUsers: boolean;
+  };
+  location: { id: string; name: string; status: RecordStatus } | null;
+};
+
+type ListQuery = { page: number; pageSize: number; q?: string };
+
+type ProfileInput = {
+  name: string;
+  username: string;
+  email?: string | null;
+  phone?: string | null;
+  roleId: string;
+  locationId: string | null;
+};
+
+type UpdateInput = ProfileInput & { status: UserStatus };
+
+type Scope = {
+  companyId: string;
+  locationId: string | null | undefined;
+  auth: RequestAuth;
+};
+
+const membershipInclude = {
+  user: true,
+  role: true,
+  location: true,
+} as const;
+
+type MembershipRow = Prisma.MembershipGetPayload<{ include: typeof membershipInclude }>;
+
+@Injectable()
+export class UsersService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly passwords: PasswordService,
+  ) {}
+
+  async listForCompany(companyId: string, raw: { page?: string; pageSize?: string; q?: string }) {
+    await this.requireCompany(companyId);
+    const query = parseListQuery(raw);
+    return this.list({ companyId, locationId: undefined, auth: { actor: 'platform' } as RequestAuth }, query);
+  }
+
+  getForCompany(companyId: string, userId: string) {
+    return this.getOne({ companyId, locationId: undefined, auth: { actor: 'platform' } as RequestAuth }, userId);
+  }
+
+  createForCompany(companyId: string, input: ProfileInput & { password: string }, actorUserId: string) {
+    return this.create(
+      { companyId, locationId: undefined, auth: { actor: 'platform', userId: actorUserId } as RequestAuth },
+      input,
+      actorUserId,
+    );
+  }
+
+  updateForCompany(companyId: string, userId: string, input: UpdateInput, actorUserId: string) {
+    return this.update(
+      { companyId, locationId: undefined, auth: { actor: 'platform', userId: actorUserId } as RequestAuth },
+      userId,
+      input,
+      actorUserId,
+    );
+  }
+
+  resetForCompany(companyId: string, userId: string, password: string, actorUserId: string) {
+    return this.reset(
+      { companyId, locationId: undefined, auth: { actor: 'platform', userId: actorUserId } as RequestAuth },
+      userId,
+      password,
+      actorUserId,
+    );
+  }
+
+  listForSession(auth: RequestAuth, raw: { page?: string; pageSize?: string; q?: string }) {
+    return this.list(this.scopeFromSession(auth), parseListQuery(raw));
+  }
+
+  getForSession(auth: RequestAuth, userId: string) {
+    return this.getOne(this.scopeFromSession(auth), userId);
+  }
+
+  createForSession(auth: RequestAuth, input: ProfileInput & { password: string }) {
+    const scope = this.scopeFromSession(auth);
+    return this.create(scope, input, auth.actor === 'platform' ? auth.userId : null);
+  }
+
+  updateForSession(auth: RequestAuth, userId: string, input: UpdateInput) {
+    const scope = this.scopeFromSession(auth);
+    return this.update(scope, userId, input, auth.actor === 'platform' ? auth.userId : null);
+  }
+
+  resetForSession(auth: RequestAuth, userId: string, password: string) {
+    const scope = this.scopeFromSession(auth);
+    return this.reset(scope, userId, password, auth.actor === 'platform' ? auth.userId : null);
+  }
+
+  private async list(scope: Scope, query: ListQuery) {
+    const where = this.whereFor(scope, query.q);
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.membership.count({ where }),
+      this.prisma.membership.findMany({
+        where,
+        include: membershipInclude,
+        orderBy: [{ user: { name: 'asc' } }, { userId: 'asc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+    ]);
+    return {
+      items: rows.map(toDto),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
+
+  private async getOne(scope: Scope, userId: string) {
+    const row = await this.prisma.membership.findFirst({
+      where: { ...this.whereFor(scope), userId },
+      include: membershipInclude,
+    });
+    if (!row || row.user.kind !== UserKind.MEMBER) throw this.userNotFound();
+    return toDto(row);
+  }
+
+  private async create(scope: Scope, input: ProfileInput & { password: string }, auditActorId: string | null) {
+    if (passwordIssue(input.password)) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Password must be at least 8 characters and include a letter and a number.',
+      });
+    }
+    const passwordHash = await this.passwords.hash(input.password);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const assignment = await this.resolveAssignment(tx, scope, input.roleId, input.locationId, null);
+        const user = await tx.user.create({
+          data: {
+            kind: UserKind.MEMBER,
+            username: null,
+            name: input.name,
+            email: input.email ?? null,
+            phone: input.phone ?? null,
+            passwordHash,
+            status: UserStatus.ACTIVE,
+          },
+        });
+        const membership = await tx.membership.create({
+          data: {
+            userId: user.id,
+            companyId: scope.companyId,
+            username: input.username,
+            roleId: assignment.roleId,
+            locationId: assignment.locationId,
+          },
+          include: membershipInclude,
+        });
+        if (auditActorId) await this.audit(tx, auditActorId, scope.companyId, user.id, AuditAction.CREATE);
+        return toDto(membership);
+      });
+    } catch (error) {
+      this.rethrowKnown(error);
+    }
+  }
+
+  private async update(scope: Scope, userId: string, input: UpdateInput, auditActorId: string | null) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.membership.findFirst({
+          where: { ...this.whereFor(scope), userId },
+          include: membershipInclude,
+        });
+        if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
+        this.assertNotSelfAdmin(scope.auth, existing, input);
+        const assignment = await this.resolveAssignment(tx, scope, input.roleId, input.locationId, {
+          roleId: existing.roleId,
+          locationId: existing.locationId,
+        });
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            name: input.name,
+            email: input.email ?? null,
+            phone: input.phone ?? null,
+            status: input.status,
+          },
+        });
+        const membership = await tx.membership.update({
+          where: { id: existing.id },
+          data: {
+            username: input.username,
+            roleId: assignment.roleId,
+            locationId: assignment.locationId,
+          },
+          include: membershipInclude,
+        });
+        if (auditActorId) await this.audit(tx, auditActorId, scope.companyId, existing.userId, AuditAction.UPDATE);
+        return toDto(membership);
+      });
+    } catch (error) {
+      this.rethrowKnown(error);
+    }
+  }
+
+  private async reset(scope: Scope, userId: string, password: string, auditActorId: string | null) {
+    const existing = await this.prisma.membership.findFirst({
+      where: { ...this.whereFor(scope), userId },
+      include: { user: true },
+    });
+    if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
+    if (scope.auth.actor === 'member' && scope.auth.userId === userId) throw this.selfAdmin();
+    await this.passwords.resetPassword(userId, password);
+    if (auditActorId) {
+      await this.prisma.auditEntry.create({
+        data: {
+          actorUserId: auditActorId,
+          companyId: scope.companyId,
+          action: AuditAction.UPDATE,
+          targetType: 'user',
+          targetId: userId,
+        },
+      });
+    }
+  }
+
+  private scopeFromSession(auth: RequestAuth): Scope {
+    if (auth.actor === 'platform') {
+      if (!auth.actingCompanyId) {
+        throw new ConflictException({
+          code: ErrorCode.CONFLICT,
+          message: 'A support company is required.',
+        });
+      }
+      return { companyId: auth.actingCompanyId, locationId: undefined, auth };
+    }
+    if (!auth.membership) {
+      throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'User was not found.' });
+    }
+    if (!auth.membership.canManageUsers) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'User management permission is required.',
+      });
+    }
+    if (auth.membership.visibility === VisibilityScope.ALL_BRANCHES) {
+      return { companyId: auth.membership.companyId, locationId: undefined, auth };
+    }
+    return {
+      companyId: auth.membership.companyId,
+      locationId: auth.membership.locationId,
+      auth,
+    };
+  }
+
+  private whereFor(scope: Scope, q?: string): Prisma.MembershipWhereInput {
+    const limited = scope.locationId !== undefined;
+    return {
+      companyId: scope.companyId,
+      user: { kind: UserKind.MEMBER },
+      ...(limited ? { locationId: scope.locationId ?? '__none__' } : {}),
+      ...(q
+        ? {
+            OR: [
+              { user: { name: { contains: q, mode: 'insensitive' } } },
+              { username: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private async resolveAssignment(
+    tx: Prisma.TransactionClient,
+    scope: Scope,
+    roleId: string,
+    locationId: string | null,
+    existing: { roleId: string; locationId: string | null } | null,
+  ) {
+    const role = await tx.role.findFirst({ where: { id: roleId, companyId: scope.companyId } });
+    if (!role) throw this.roleNotFound();
+    const scoped = scope.locationId !== undefined;
+    if (scoped && role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'This role is outside your branch.',
+      });
+    }
+    if (role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
+      if (locationId) {
+        throw new BadRequestException({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: 'An all-branch role is not tied to a branch.',
+        });
+      }
+      return { roleId: role.id, locationId: null };
+    }
+    if (!locationId) {
+      throw new BadRequestException({
+        code: ErrorCode.LOCATION_REQUIRED,
+        message: 'This role requires a branch.',
+      });
+    }
+    if (scoped && locationId !== scope.locationId) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'This branch is outside your scope.',
+      });
+    }
+    const location = await tx.location.findFirst({ where: { id: locationId, companyId: scope.companyId } });
+    if (!location) throw this.locationNotFound();
+    const unchanged =
+      existing !== null && existing.roleId === role.id && existing.locationId === location.id;
+    if (location.status !== RecordStatus.ACTIVE && !unchanged) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Choose an active branch.',
+      });
+    }
+    return { roleId: role.id, locationId: location.id };
+  }
+
+  private assertNotSelfAdmin(auth: RequestAuth, existing: MembershipRow, input: UpdateInput) {
+    if (auth.actor !== 'member' || auth.userId !== existing.userId) return;
+    const locationChanged = (existing.locationId ?? null) !== (input.locationId ?? null);
+    if (input.status === UserStatus.INACTIVE || input.roleId !== existing.roleId || locationChanged) {
+      throw this.selfAdmin();
+    }
+  }
+
+  private async requireCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+    if (!company) throw this.companyNotFound();
+  }
+
+  private audit(
+    tx: Prisma.TransactionClient,
+    actorUserId: string,
+    companyId: string,
+    userId: string,
+    action: AuditAction,
+  ) {
+    return tx.auditEntry.create({
+      data: {
+        actorUserId,
+        companyId,
+        action,
+        targetType: 'user',
+        targetId: userId,
+      },
+    });
+  }
+
+  private companyNotFound() {
+    return new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'Company was not found.' });
+  }
+
+  private userNotFound() {
+    return new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'User was not found.' });
+  }
+
+  private roleNotFound() {
+    return new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'Role was not found.' });
+  }
+
+  private locationNotFound() {
+    return new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'Location was not found.' });
+  }
+
+  private selfAdmin() {
+    return new ConflictException({
+      code: ErrorCode.CONFLICT,
+      message: 'Change your own password from the account screen.',
+    });
+  }
+
+  private rethrowKnown(error: unknown): never {
+    if (error instanceof HttpException) throw error;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new ConflictException({
+        code: ErrorCode.NAME_TAKEN,
+        message: 'Another user in this company already uses this username.',
+      });
+    }
+    throw error;
+  }
+}
+
+function parseListQuery(raw: { page?: string; pageSize?: string; q?: string }): ListQuery {
+  const page = raw.page === undefined || raw.page === '' ? 1 : Number(raw.page);
+  const pageSize = raw.pageSize === undefined || raw.pageSize === '' ? 20 : Number(raw.pageSize);
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+    throw new BadRequestException({
+      code: ErrorCode.VALIDATION_ERROR,
+      message: 'Page and page size are not valid.',
+    });
+  }
+  const q = raw.q?.trim();
+  if (q && q.length > 80) {
+    throw new BadRequestException({
+      code: ErrorCode.VALIDATION_ERROR,
+      message: 'The search is too long.',
+    });
+  }
+  return { page, pageSize, q: q || undefined };
+}
+
+function toDto(row: MembershipRow): CustomerUserDto {
+  return {
+    id: row.user.id,
+    name: row.user.name,
+    username: row.username,
+    email: row.user.email,
+    phone: row.user.phone,
+    status: row.user.status,
+    role: {
+      id: row.role.id,
+      key: row.role.key,
+      name: row.role.name,
+      visibilityScope: row.role.visibilityScope,
+      canManageUsers: row.role.canManageUsers,
+    },
+    location: row.location
+      ? { id: row.location.id, name: row.location.name, status: row.location.status }
+      : null,
+  };
+}

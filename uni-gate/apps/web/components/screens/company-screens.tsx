@@ -329,6 +329,9 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
             <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/branches`}>
               {messages.navBranches}
             </Link>
+            <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/users`}>
+              {messages.navUsers}
+            </Link>
             <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/roles`}>
               {messages.navRoles}
             </Link>

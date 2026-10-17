@@ -10,11 +10,24 @@ import { PrimaryButton } from '@/components/primary-button';
 import { AppShell, ConfirmDialog, EmptyState, PageHeader, Pagination, PlatformShell, StatusBadge } from '@/components/shell';
 import { moduleLabel } from '@/lib/messages';
 import { pageOf } from '@/lib/page';
-import { canCreateBranch, canEditRoles, canManageUsers, canSeeRoles } from '@/lib/permissions';
+import { canCreateBranch, canEditRoles, canManageUsers, canSeeRoles, seesAllBranches } from '@/lib/permissions';
 import { usePreferences } from '@/lib/preferences';
 import { changeOwnPassword, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
 import { listModules, passwordIssue, roleKeyIssue } from '@/services/directory';
+import {
+  createCustomerUser,
+  createPlatformUser,
+  getCustomerUser,
+  getPlatformUser,
+  listCustomerUsers,
+  listPlatformUsers,
+  resetCustomerPassword,
+  resetPlatformPassword,
+  updateCustomerUser,
+  updatePlatformUser,
+  type CustomerUser,
+} from '@/services/users';
 import {
   createPlatformRole,
   listCustomerRoles,
@@ -186,6 +199,7 @@ function OrgFrame({
           { href: '/platform', label: messages.navDashboard },
           { href: '/platform/companies', label: messages.navCompanies },
           { href: '/app/branches', label: messages.navBranches },
+          { href: '/app/users', label: messages.navUsers },
           { href: '/app/roles', label: messages.navRoles },
         ]
       : appItems;
@@ -397,14 +411,135 @@ export function BranchFormScreen({
 export function UsersScreen({ companyId, chrome }: { companyId: string; chrome: 'platform' | 'app' }) {
   const session = useGate(chrome);
   const { messages } = usePreferences();
-  if (!session) return <p role="status">{messages.checking}</p>;
-  if (!canManageUsers(session)) return <p>{messages.forbidden}</p>;
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState<CustomerUser[]>([]);
+  const [total, setTotal] = useState(0);
+  const [companyName, setCompanyName] = useState('');
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (chrome === 'platform') {
+        const [company, listed] = await Promise.all([
+          getPlatformCompany(companyId),
+          listPlatformUsers(companyId, { page, q }),
+        ]);
+        if (cancelled) return;
+        if (!company.ok || !listed.ok) {
+          const code = !company.ok ? company.code : listed.ok ? '' : listed.code;
+          setMissing(code === 'NOT_FOUND');
+          setDenied(code === 'FORBIDDEN');
+          setLoadError(code === 'NOT_FOUND' || code === 'FORBIDDEN' ? '' : messages.network);
+          setReady(true);
+          return;
+        }
+        setCompanyName(company.company.name);
+        setRows(listed.list.items);
+        setTotal(listed.list.total);
+        setReady(true);
+        return;
+      }
+      const listed = await listCustomerUsers({ page, q });
+      if (cancelled) return;
+      if (!listed.ok) {
+        setDenied(listed.code === 'FORBIDDEN');
+        setLoadError(listed.code === 'FORBIDDEN' || listed.code === 'CONFLICT' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      setRows(listed.list.items);
+      setTotal(listed.list.total);
+      setReady(true);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [chrome, companyId, messages.network, page, q]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  if (!canManageUsers(session) || denied) return <p>{messages.forbidden}</p>;
+  if (missing) return <p>{messages.notFound}</p>;
+  if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
+  const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
+  const base = chrome === 'platform' ? `/platform/companies/${companyId}/users` : '/app/users';
+  const pages = Math.max(1, Math.ceil(total / 20));
   return (
     <OrgFrame chrome={chrome} session={session} companyId={companyId}>
-      <PageHeader title={messages.usersTitle} />
-      <p className="field-hint">{messages.pendingAreas}</p>
+      <PageHeader
+        title={messages.usersTitle}
+        crumbs={crumbs(chrome, displayName, messages.usersTitle, messages)}
+        actions={
+          <Link className="primary-button link-button" href={`${base}/new`}>
+            {messages.newUser}
+          </Link>
+        }
+      />
+      {loadError ? <InlineAlert message={loadError} /> : null}
+      {!loadError ? (
+        <div className="filters">
+          <label>
+            {messages.search}
+            <input
+              value={q}
+              onChange={(event) => {
+                setQ(event.target.value);
+                setPage(1);
+              }}
+            />
+          </label>
+        </div>
+      ) : null}
+      {!loadError && rows.length === 0 ? <EmptyState text={q ? messages.noResults : messages.empty} /> : null}
+      {!loadError && rows.length > 0 ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{messages.name}</th>
+                <th>{messages.username}</th>
+                <th>{messages.role}</th>
+                <th>{messages.branch}</th>
+                <th>{messages.status}</th>
+                <th>{messages.edit}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.name}</td>
+                  <td>{user.username}</td>
+                  <td>{user.role.name}</td>
+                  <td>{user.location?.name || messages.allBranches}</td>
+                  <td>
+                    <StatusBadge status={user.status} />
+                  </td>
+                  <td>
+                    <Link href={`${base}/${user.id}`}>{messages.edit}</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {!loadError ? <Pagination page={page} pages={pages} onPage={setPage} /> : null}
     </OrgFrame>
   );
+}
+
+function userError(code: string, messages: { nameTaken: string; locationRequired: string; selfAdmin: string; assignmentInvalid: string; passwordRules: string; forbidden: string; network: string }) {
+  if (code === 'NAME_TAKEN') return messages.nameTaken;
+  if (code === 'LOCATION_REQUIRED') return messages.locationRequired;
+  if (code === 'CONFLICT') return messages.selfAdmin;
+  if (code === 'VALIDATION_ERROR') return messages.assignmentInvalid;
+  if (code === 'FORBIDDEN') return messages.forbidden;
+  return messages.network;
 }
 
 export function UserFormScreen({
@@ -417,13 +552,232 @@ export function UserFormScreen({
   chrome: 'platform' | 'app';
 }) {
   const session = useGate(chrome);
+  const router = useRouter();
   const { messages } = usePreferences();
-  if (!session) return <p role="status">{messages.checking}</p>;
-  if (!canManageUsers(session)) return <p>{messages.forbidden}</p>;
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [locationId, setLocationId] = useState('');
+  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [roles, setRoles] = useState<CompanyRole[]>([]);
+  const [locations, setLocations] = useState<Branch[]>([]);
+  const [existing, setExisting] = useState<CustomerUser | null>(null);
+  const [companyName, setCompanyName] = useState('');
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [reset, setReset] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const roleCall = chrome === 'platform' ? listPlatformRoles(companyId) : listCustomerRoles();
+      const locationCall = chrome === 'platform' ? listPlatformLocations(companyId) : listCustomerLocations();
+      const userCall = !userId ? null : chrome === 'platform' ? getPlatformUser(companyId, userId) : getCustomerUser(userId);
+      const companyCall = chrome === 'platform' ? getPlatformCompany(companyId) : null;
+      const [roleResult, locationResult, userResult, companyResult] = await Promise.all([roleCall, locationCall, userCall, companyCall]);
+      if (cancelled) return;
+      if (companyResult && !companyResult.ok) {
+        setMissing(companyResult.code === 'NOT_FOUND');
+        setLoadError(companyResult.code === 'NOT_FOUND' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      if (companyResult?.ok) setCompanyName(companyResult.company.name);
+      if (!roleResult.ok || !locationResult.ok) {
+        const code = !roleResult.ok ? roleResult.code : !locationResult.ok ? locationResult.code : '';
+        setDenied(code === 'FORBIDDEN');
+        setLoadError(code === 'FORBIDDEN' || code === 'CONFLICT' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      if (userResult && !userResult.ok) {
+        setMissing(userResult.code === 'NOT_FOUND');
+        setDenied(userResult.code === 'FORBIDDEN');
+        setLoadError(userResult.code === 'NOT_FOUND' || userResult.code === 'FORBIDDEN' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      setRoles(roleResult.items);
+      setLocations(locationResult.items);
+      if (userResult?.ok) {
+        setExisting(userResult.user);
+        setName(userResult.user.name);
+        setUsername(userResult.user.username);
+        setEmail(userResult.user.email ?? '');
+        setPhone(userResult.user.phone ?? '');
+        setRoleId(userResult.user.role.id);
+        setLocationId(userResult.user.location?.id ?? '');
+        setStatus(userResult.user.status);
+      }
+      setReady(true);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [chrome, companyId, messages.network, userId]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  if (!canManageUsers(session) || denied) return <p>{messages.forbidden}</p>;
+  if (missing) return <p>{messages.notFound}</p>;
+  if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
+  const broad = seesAllBranches(session);
+  const choices = roles.filter((role) => broad || role.visibilityScope !== 'ALL_BRANCHES');
+  const selected = choices.find((role) => role.id === roleId) ?? roles.find((role) => role.id === roleId);
+  const needsLocation = selected ? selected.visibilityScope !== 'ALL_BRANCHES' : true;
+  const chosenLocation = broad ? locationId : (session.locationId ?? locationId);
+  const branchChoices = locations.filter((item) => {
+    const visible = broad || item.id === session.locationId;
+    const active = item.status === 'ACTIVE' || item.id === existing?.location?.id;
+    return visible && active;
+  });
+  const self = Boolean(existing && session.actor === 'member' && session.userId === existing.id);
+  const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
+  const base = chrome === 'platform' ? `/platform/companies/${companyId}/users` : '/app/users';
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!session || saving) return;
+    if (!name.trim() || !username.trim() || !roleId) {
+      setError(messages.required);
+      return;
+    }
+    if (!existing) {
+      const issue = passwordIssue(password);
+      if (!password) return setError(messages.required);
+      if (issue) return setError(messages.passwordRules);
+      if (password !== confirm) return setError(messages.passwordMismatch);
+    }
+    if (needsLocation && !chosenLocation) return setError(messages.locationRequired);
+    setSaving(true);
+    setError('');
+    const input = {
+      name: name.trim(),
+      username: username.trim(),
+      email: email.trim() || null,
+      phone: phone.trim() || null,
+      roleId,
+      locationId: needsLocation ? chosenLocation : null,
+    };
+    const result = existing
+      ? chrome === 'platform'
+        ? await updatePlatformUser(companyId, existing.id, { ...input, status })
+        : await updateCustomerUser(existing.id, { ...input, status })
+      : chrome === 'platform'
+        ? await createPlatformUser(companyId, { ...input, password })
+        : await createCustomerUser({ ...input, password });
+    setSaving(false);
+    if (!result.ok) {
+      setError(userError(result.code, messages));
+      return;
+    }
+    router.push(base);
+  }
+
+  async function resetPassword() {
+    if (!existing || self || saving) return;
+    const issue = passwordIssue(reset);
+    if (issue) return setError(messages.passwordRules);
+    if (reset !== resetConfirm) return setError(messages.passwordMismatch);
+    setSaving(true);
+    setError('');
+    const result = chrome === 'platform'
+      ? await resetPlatformPassword(companyId, existing.id, reset)
+      : await resetCustomerPassword(existing.id, reset);
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.code === 'VALIDATION_ERROR' ? messages.passwordRules : userError(result.code, messages));
+      return;
+    }
+    setReset('');
+    setResetConfirm('');
+    setNotice(messages.passwordSaved);
+  }
+
   return (
     <OrgFrame chrome={chrome} session={session} companyId={companyId}>
-      <PageHeader title={userId ? messages.editUser : messages.newUser} />
-      <p className="field-hint">{messages.pendingAreas}</p>
+      <PageHeader
+        title={existing ? messages.editUser : messages.newUser}
+        crumbs={crumbs(chrome, displayName, messages.usersTitle, messages)}
+      />
+      {loadError ? <InlineAlert message={loadError} /> : null}
+      {self ? <InlineAlert tone="info" message={messages.selfAdmin} /> : null}
+      {!loadError ? (
+        <form className="stack-form" onSubmit={onSubmit} noValidate>
+          <FormField id="user-name" label={messages.name} required error={error}>
+            <input id="user-name" value={name} disabled={saving} onChange={(event) => setName(event.target.value)} />
+          </FormField>
+          <FormField id="user-username" label={messages.username} required>
+            <input id="user-username" value={username} disabled={saving} onChange={(event) => setUsername(event.target.value)} />
+          </FormField>
+          {!existing ? (
+            <>
+              <PasswordField id="user-pass" label={messages.password} value={password} onChange={setPassword} autoComplete="new-password" />
+              <p className="field-hint">{messages.passwordRules}</p>
+              <PasswordField id="user-confirm" label={messages.confirmPassword} value={confirm} onChange={setConfirm} autoComplete="new-password" />
+            </>
+          ) : null}
+          <FormField id="user-email" label={messages.email} optional hint={messages.optional}>
+            <input id="user-email" value={email} disabled={saving} onChange={(event) => setEmail(event.target.value)} />
+          </FormField>
+          <FormField id="user-phone" label={messages.phone} optional>
+            <input id="user-phone" value={phone} disabled={saving} onChange={(event) => setPhone(event.target.value)} />
+          </FormField>
+          <FormField id="user-role" label={messages.role} required>
+            <select id="user-role" value={roleId} disabled={saving || self} onChange={(event) => setRoleId(event.target.value)}>
+              <option value="">{messages.role}</option>
+              {choices.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          {needsLocation ? (
+            <FormField id="user-branch" label={messages.branch} required>
+              <select id="user-branch" value={chosenLocation} disabled={saving || self || !broad} onChange={(event) => setLocationId(event.target.value)}>
+                <option value="">{messages.branch}</option>
+                {branchChoices.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          ) : null}
+          {existing ? (
+            <FormField id="user-status" label={messages.status}>
+              <select id="user-status" value={status} disabled={saving || self} onChange={(event) => setStatus(event.target.value as 'ACTIVE' | 'INACTIVE')}>
+                <option value="ACTIVE">{messages.active}</option>
+                <option value="INACTIVE">{messages.inactiveStatus}</option>
+              </select>
+            </FormField>
+          ) : null}
+          {notice ? <InlineAlert tone="success" message={notice} /> : null}
+          <PrimaryButton disabled={saving}>{saving ? messages.saving : messages.save}</PrimaryButton>
+        </form>
+      ) : null}
+      {existing && !self && !loadError ? (
+        <section className="danger-zone">
+          <h2>{messages.resetPassword}</h2>
+          <PasswordField id="reset-pass" label={messages.newPassword} value={reset} onChange={setReset} autoComplete="new-password" />
+          <PasswordField id="reset-confirm" label={messages.confirmPassword} value={resetConfirm} onChange={setResetConfirm} autoComplete="new-password" />
+          <p className="field-hint">{messages.passwordRules}</p>
+          <button type="button" className="secondary-button" disabled={saving} onClick={() => void resetPassword()}>
+            {messages.resetPassword}
+          </button>
+        </section>
+      ) : null}
     </OrgFrame>
   );
 }
@@ -694,6 +1048,7 @@ export function CustomerDashboard() {
   const { messages } = usePreferences();
   const appItems = useAppItems(session, session?.companyId ?? null);
   const [branchCount, setBranchCount] = useState<number | null>(null);
+  const [userCount, setUserCount] = useState<number | null>(null);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
@@ -714,6 +1069,18 @@ export function CustomerDashboard() {
     };
   }, [messages.network, messages.pendingAreas, session?.companyId]);
 
+  useEffect(() => {
+    if (!session?.companyId || !session.canManageUsers) return;
+    let cancelled = false;
+    void listCustomerUsers({ page: 1 }).then((result) => {
+      if (cancelled || !result.ok) return;
+      setUserCount(result.list.total);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.canManageUsers, session?.companyId]);
+
   if (!session) return <p role="status">{messages.checking}</p>;
   if (!session.companyId) return <p className="field-hint">{messages.pendingAreas}</p>;
   const items =
@@ -722,6 +1089,7 @@ export function CustomerDashboard() {
           { href: '/platform', label: messages.navDashboard },
           { href: '/platform/companies', label: messages.navCompanies },
           { href: '/app/branches', label: messages.navBranches },
+          { href: '/app/users', label: messages.navUsers },
           { href: '/app/roles', label: messages.navRoles },
         ]
       : appItems;
@@ -746,10 +1114,10 @@ export function CustomerDashboard() {
           <span>{messages.countsBranches}</span>
         </Link>
         {session.canManageUsers ? (
-          <div className="stat-link">
-            <strong>{messages.countsUsersLater}</strong>
+          <Link className="stat-link" href="/app/users">
+            <strong>{userCount === null ? '…' : userCount}</strong>
             <span>{messages.countsUsers}</span>
-          </div>
+          </Link>
         ) : null}
       </div>
       <p className="field-hint">{messages.pendingAreas}</p>

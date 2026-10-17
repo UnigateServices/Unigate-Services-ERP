@@ -300,7 +300,7 @@ describe('authentication', () => {
     expect((await post('/api/auth/login', { companyCode: 'tradivia', username: 'manager', password: 'Manager1' })).status).toBe(401);
   });
 
-  it('resets a password through the service without exposing a user password route', async () => {
+  it('resets a password through the service and requires authentication on the user password route', async () => {
     const member = await memberUser({ code: 'tradivia', username: 'manager', password: 'Manager1' });
     const cookie = await loginMember('tradivia', 'manager', 'Manager1');
     await passwords.resetPassword(member.userId, 'Reset1234');
@@ -308,11 +308,12 @@ describe('authentication', () => {
     await loginMember('tradivia', 'manager', 'Reset1234');
     const user = await prisma.user.findUnique({ where: { id: member.userId } });
     expect(user?.authVersion).toBe(2);
-    await request(app.getHttpServer())
+    const anonymous = await request(app.getHttpServer())
       .post(`/api/users/${member.userId}/password`)
       .set('Origin', ORIGIN)
       .send({ password: 'Reset1234' })
-      .expect(404);
+      .expect(401);
+    expect(anonymous.body.code).toBe('UNAUTHORIZED');
   });
 
   it('clears the cookie on logout and rejects a state-changing request without an allowed origin', async () => {

@@ -140,6 +140,8 @@ export type Messages = {
   editBranch: string;
   branchName: string;
   nameTaken: string;
+  selfAdmin: string;
+  assignmentInvalid: string;
   deactivate: string;
   deactivateBranchBody: string;
   readOnly: string;
@@ -285,7 +287,7 @@ const ar: Messages = {
   modulesSection: 'الوحدات',
   modulesHint: 'يمكن تركها كلها مغلقة.',
   branchHint: 'يُنشأ فرع واحد بنفس الاسم داخل نفس الاشتراك.',
-  pendingAreas: 'المستخدمون والوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
+  pendingAreas: 'الوحدات تُربط في مرحلة لاحقة. لا تُعرض هنا بيانات تجريبية.',
   codeHint: 'أحرف إنجليزية صغيرة، ويُستخدم في الدخول.',
   codeInvalid: 'الرمز من حرفين إلى 32: أحرف صغيرة أو أرقام أو شرطة.',
   codeTaken: 'هذا الرمز مستخدم لشركة أخرى.',
@@ -331,6 +333,8 @@ const ar: Messages = {
   editBranch: 'تعديل الفرع',
   branchName: 'اسم الفرع',
   nameTaken: 'الاسم مستخدم داخل هذه الشركة.',
+  selfAdmin: 'لا يمكن تغيير صلاحيتك من هنا. غيّر كلمة مرورك من الحساب.',
+  assignmentInvalid: 'هذا الربط بين الدور والفرع غير مقبول.',
   deactivate: 'إيقاف',
   deactivateBranchBody: 'لا يُختار للعمليات الجديدة. السجل القديم يبقى.',
   readOnly: 'عرض فقط.',
@@ -476,7 +480,7 @@ const en: Messages = {
   modulesSection: 'Modules',
   modulesHint: 'You can leave all of them off.',
   branchHint: 'One branch is created with the same name, inside the same subscription.',
-  pendingAreas: 'Users and modules connect in a later phase. Sample data is not shown here.',
+  pendingAreas: 'Modules connect in a later phase. Sample data is not shown here.',
   codeHint: 'Lowercase English letters. Used at sign-in.',
   codeInvalid: 'Use 2–32 characters: lowercase letters, digits, or a hyphen.',
   codeTaken: 'Another company already uses this code.',
@@ -522,6 +526,8 @@ const en: Messages = {
   editBranch: 'Edit branch',
   branchName: 'Branch name',
   nameTaken: 'This name is already used in this company.',
+  selfAdmin: 'You cannot change your own access here. Change your password from the account screen.',
+  assignmentInvalid: 'This role and branch combination is not allowed.',
   deactivate: 'Deactivate',
   deactivateBranchBody: 'It cannot be chosen for new work. The old record stays.',
   readOnly: 'View only.',
