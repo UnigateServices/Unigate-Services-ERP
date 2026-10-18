@@ -1,0 +1,1078 @@
+// TRADIVIA Finance v2 — phase A (GAS operations), warehouse, and sales invoices.
+// Later: purchase invoices, journal, budgets.
+// companyId is fixed to "tradivia" now so the schema can move into UNI GATE ERP later.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GENERAL_MANAGER
+  SUPERVISOR
+  EMPLOYEE
+  MONITOR
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Currency {
+  USD
+  SYP
+}
+
+/// System funds: الخزنة، شام كاش، السلف، البنك
+enum FundType {
+  VAULT
+  SHAM_CASH
+  ADVANCES
+  BANK
+}
+
+enum TransactionStatus {
+  COMPLETED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  DELETED
+}
+
+enum ExchangeType {
+  BUY
+  SELL
+}
+
+/// GAS: صادر من رصيد المستلف، أو تصريف عملة داخل الرصيد.
+enum AdvanceType {
+  OUTCOME
+  EXCHANGE
+}
+
+enum AuditActionType {
+  UPDATE
+  DELETE
+}
+
+enum AuditRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DIRECT
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  employees        Employee[]
+  incomes          Income[]
+  outcomes         Outcome[]
+  exchanges        Exchange[]
+  transfers        Transfer[]
+  advances         Advance[]
+  openingBalances  OpeningBalance[]
+  auditTrail       AuditTrail[]
+  notifications    Notification[]
+  salesInvoices    SalesInvoice[]
+  purchaseInvoices PurchaseInvoice[]
+  journalEntries   JournalEntry[]
+  inventoryAssessments InventoryAssessment[]
+  costCenter       CostCenter?
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("locations")
+}
+
+model Employee {
+  id            String       @id @default(cuid())
+  companyId     String       @default("tradivia") @map("company_id")
+  name          String
+  passwordHash  String       @map("password_hash")
+  role          Role
+  /// Null for GENERAL_MANAGER and MONITOR (they see every office).
+  locationId    String?      @map("location_id")
+  accountStatus RecordStatus @default(ACTIVE) @map("account_status")
+  sessionLocked Boolean      @default(false) @map("session_locked")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  location               Location?                @relation(fields: [locationId], references: [id])
+  incomes                Income[]
+  outcomes               Outcome[]
+  exchanges              Exchange[]
+  transfers              Transfer[]
+  advances               Advance[]
+  openingBalances        OpeningBalance[]
+  salesInvoices          SalesInvoice[]
+  voidedInvoices         SalesInvoice[]           @relation("InvoiceVoidedBy")
+  inventoryAssessments   InventoryAssessment[]
+  salesPayments          SalesInvoicePayment[]
+  purchaseInvoices       PurchaseInvoice[]
+  voidedPurchases        PurchaseInvoice[]        @relation("PurchaseVoidedBy")
+  purchasePayments       PurchaseInvoicePayment[]
+  auditRequests          AuditTrail[]             @relation("AuditRequester")
+  auditDecisions         AuditTrail[]             @relation("AuditSupervisor")
+  notifications          Notification[]           @relation("NotificationEmployee")
+  requestedNotifications Notification[]           @relation("NotificationRequester")
+  stockMovements         StockMovement[]
+  journalEntries         JournalEntry[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([role])
+  @@index([locationId])
+  @@map("employees")
+}
+
+model Borrower {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  transfers Transfer[]
+  advances  Advance[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("borrowers")
+}
+
+model Project {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  /// Places the project appears: INCOME | OUTCOME | LOANS | REPORTS
+  showIn    String[]     @default([]) @map("show_in")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  incomes    Income[]
+  outcomes   Outcome[]
+  advances   Advance[]
+  costCenter CostCenter?
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("projects")
+}
+
+model Bank {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  incomes         Income[]
+  outcomes        Outcome[]
+  exchanges       Exchange[]
+  transfersFrom   Transfer[]       @relation("TransferFromBank")
+  transfersTo     Transfer[]       @relation("TransferToBank")
+  openingBalances OpeningBalance[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("banks")
+}
+
+model Income {
+  id              String            @id @default(cuid())
+  companyId       String            @default("tradivia") @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  sender          String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  total           Decimal           @db.Decimal(18, 4)
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  project      Project?             @relation(fields: [projectId], references: [id])
+  bank         Bank?                @relation(fields: [bankId], references: [id])
+  employee     Employee             @relation(fields: [employeeId], references: [id])
+  location     Location?            @relation(fields: [locationId], references: [id])
+  salesPayment SalesInvoicePayment?
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([projectId])
+  @@index([locationId])
+  @@map("incomes")
+}
+
+model Outcome {
+  id              String            @id @default(cuid())
+  companyId       String            @default("tradivia") @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  deliverer       String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  total           Decimal           @db.Decimal(18, 4)
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  project         Project?                @relation(fields: [projectId], references: [id])
+  bank            Bank?                   @relation(fields: [bankId], references: [id])
+  employee        Employee                @relation(fields: [employeeId], references: [id])
+  location        Location?               @relation(fields: [locationId], references: [id])
+  purchasePayment PurchaseInvoicePayment?
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([projectId])
+  @@index([locationId])
+  @@map("outcomes")
+}
+
+model Exchange {
+  id               String            @id @default(cuid())
+  companyId        String            @default("tradivia") @map("company_id")
+  operationNumber  Int               @map("operation_number")
+  transactionDate  DateTime          @map("transaction_date") @db.Date
+  systemDate       DateTime          @default(now()) @map("system_date")
+  fund             FundType
+  bankId           String?           @map("bank_id")
+  exchangeType     ExchangeType      @map("exchange_type")
+  paidCurrency     Currency          @map("paid_currency")
+  receivedCurrency Currency          @map("received_currency")
+  exchangeAmount   Decimal           @map("exchange_amount") @db.Decimal(18, 4)
+  amountCurrency   Currency          @map("amount_currency")
+  exchangeRate     Decimal           @map("exchange_rate") @db.Decimal(18, 6)
+  total            Decimal           @db.Decimal(18, 4)
+  attachments      String            @default("")
+  notes            String            @default("")
+  employeeId       String            @map("employee_id")
+  locationId       String?           @map("location_id")
+  status           TransactionStatus @default(COMPLETED)
+  reference        String
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  deletedAt        DateTime?         @map("deleted_at")
+
+  bank     Bank?     @relation(fields: [bankId], references: [id])
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("exchanges")
+}
+
+model Transfer {
+  id              String            @id @default(cuid())
+  companyId       String            @default("tradivia") @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  fromFund        FundType          @map("from_fund")
+  toFund          FundType          @map("to_fund")
+  fromBankId      String?           @map("from_bank_id")
+  toBankId        String?           @map("to_bank_id")
+  currency        Currency
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  amount          Decimal           @db.Decimal(18, 4)
+  borrowerId      String?           @map("borrower_id")
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  fromBank Bank?     @relation("TransferFromBank", fields: [fromBankId], references: [id])
+  toBank   Bank?     @relation("TransferToBank", fields: [toBankId], references: [id])
+  borrower Borrower? @relation(fields: [borrowerId], references: [id])
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("transfers")
+}
+
+model Advance {
+  id              String            @id @default(cuid())
+  companyId       String            @default("tradivia") @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  borrowerId      String            @map("borrower_id")
+  advanceType     AdvanceType       @map("advance_type")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  exchangeRate    Decimal?          @map("exchange_rate") @db.Decimal(18, 6)
+  total           Decimal           @db.Decimal(18, 4)
+  fromCurrency    Currency?         @map("from_currency")
+  toCurrency      Currency?         @map("to_currency")
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  borrower Borrower  @relation(fields: [borrowerId], references: [id])
+  project  Project?  @relation(fields: [projectId], references: [id])
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([borrowerId])
+  @@index([locationId])
+  @@map("advances")
+}
+
+model OpeningBalance {
+  id              String            @id @default(cuid())
+  companyId       String            @default("tradivia") @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  currency        Currency
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  amount          Decimal           @db.Decimal(18, 4)
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  bank     Bank?     @relation(fields: [bankId], references: [id])
+  employee Employee  @relation(fields: [employeeId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, fund, currency])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("opening_balances")
+}
+
+model AuditTrail {
+  id                 String             @id @default(cuid())
+  companyId          String             @default("tradivia") @map("company_id")
+  originalReference  String             @map("original_reference")
+  requesterId        String             @map("requester_id")
+  actionType         AuditActionType    @map("action_type")
+  oldDetails         Json               @map("old_details")
+  newDetails         Json               @map("new_details")
+  requestedAt        DateTime           @default(now()) @map("requested_at")
+  requestStatus      AuditRequestStatus @default(PENDING) @map("request_status")
+  supervisorId       String?            @map("supervisor_id")
+  supervisorDecision String             @default("") @map("supervisor_decision")
+  reason             String             @default("")
+  locationId         String?            @map("location_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  requester  Employee  @relation("AuditRequester", fields: [requesterId], references: [id])
+  supervisor Employee? @relation("AuditSupervisor", fields: [supervisorId], references: [id])
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  @@index([companyId, requestStatus])
+  @@index([originalReference])
+  @@index([requesterId])
+  @@index([locationId])
+  @@map("audit_trail")
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  companyId   String             @default("tradivia") @map("company_id")
+  employeeId  String             @map("employee_id")
+  message     String
+  occurredAt  DateTime           @default(now()) @map("occurred_at")
+  status      NotificationStatus @default(UNREAD)
+  section     String             @default("")
+  requestId   String             @default("") @map("request_id")
+  actionType  String             @default("") @map("action_type")
+  reference   String             @default("")
+  requesterId String?            @map("requester_id")
+  locationId  String?            @map("location_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  employee  Employee  @relation("NotificationEmployee", fields: [employeeId], references: [id])
+  requester Employee? @relation("NotificationRequester", fields: [requesterId], references: [id])
+  location  Location? @relation(fields: [locationId], references: [id])
+
+  @@index([companyId, employeeId, status])
+  @@index([reference])
+  @@index([locationId])
+  @@map("notifications")
+}
+
+enum ProductUnit {
+  PIECE
+  KG
+  METER
+  LITER
+  BOX
+  SET
+}
+
+enum StockMoveType {
+  IN
+  OUT
+  ADJUST
+}
+
+enum StockSourceType {
+  MANUAL
+  SALES_ISSUE
+  SALES_RETURN
+  PURCHASE_RECEIPT
+  PURCHASE_RETURN
+}
+
+enum SalesInvoiceStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+enum SalesPaymentStatus {
+  POSTED
+  REVERSED
+}
+
+model Warehouse {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  isDefault Boolean      @default(false) @map("is_default")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  movements        StockMovement[]
+  salesInvoices    SalesInvoice[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+model Product {
+  id          String       @id @default(cuid())
+  companyId   String       @default("tradivia") @map("company_id")
+  name        String
+  sku         String
+  barcode     String       @default("")
+  unit        ProductUnit  @default(PIECE)
+  costPrice   Decimal?     @map("cost_price") @db.Decimal(18, 4)
+  salePrice   Decimal?     @map("sale_price") @db.Decimal(18, 4)
+  unitNrv     Decimal?     @map("unit_nrv") @db.Decimal(18, 4)
+  nrvCurrency Currency?    @map("nrv_currency")
+  inventoryAllowance Decimal @default(0) @map("inventory_allowance") @db.Decimal(18, 4)
+  minQuantity Decimal      @default(0) @map("min_quantity") @db.Decimal(18, 4)
+  imagePath   String       @default("") @map("image_path")
+  imageMime   String       @default("") @map("image_mime")
+  notes       String       @default("")
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  movements      StockMovement[]
+  salesLines     SalesInvoiceLine[]
+  purchaseLines  PurchaseInvoiceLine[]
+  nrvLines       InventoryAssessmentLine[]
+
+  @@unique([companyId, name])
+  @@unique([companyId, sku])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@map("products")
+}
+
+/// Quantity is the signed stock effect: IN positive, OUT negative, ADJUST is the delta to the counted quantity.
+model StockMovement {
+  id           String          @id @default(cuid())
+  companyId    String          @default("tradivia") @map("company_id")
+  reference    String
+  productId    String          @map("product_id")
+  warehouseId  String          @map("warehouse_id")
+  moveType     StockMoveType   @map("move_type")
+  quantity     Decimal         @db.Decimal(18, 4)
+  notes        String          @default("")
+  sourceType   StockSourceType @default(MANUAL) @map("source_type")
+  sourceId     String          @default("") @map("source_id")
+  sourceLineId String          @default("") @map("source_line_id")
+  employeeId   String          @map("employee_id")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+
+  @@unique([companyId, reference])
+  @@index([companyId, warehouseId, productId])
+  @@index([productId])
+  @@index([employeeId])
+  @@index([createdAt])
+  @@index([companyId, sourceId])
+  @@map("stock_movements")
+}
+
+model Customer {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  phone     String       @default("")
+  address   String       @default("")
+  notes     String       @default("")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  invoices SalesInvoice[]
+
+  @@unique([companyId, name])
+  @@index([companyId, status])
+  @@map("customers")
+}
+
+/// Commercial sale. Stock moves only when POSTED. Cash is a separate payment that creates an income.
+model SalesInvoice {
+  id              String             @id @default(cuid())
+  companyId       String             @default("tradivia") @map("company_id")
+  number          Int
+  reference       String
+  transactionDate DateTime           @map("transaction_date") @db.Date
+  customerId      String             @map("customer_id")
+  customerName    String             @map("customer_name")
+  warehouseId     String             @map("warehouse_id")
+  warehouseName   String             @map("warehouse_name")
+  currency        Currency
+  fxRate          Decimal?           @map("fx_rate") @db.Decimal(18, 6)
+  notes           String             @default("")
+  discount        Decimal            @default(0) @db.Decimal(18, 4)
+  subtotal        Decimal            @default(0) @db.Decimal(18, 4)
+  total           Decimal            @default(0) @db.Decimal(18, 4)
+  status          SalesInvoiceStatus @default(DRAFT)
+  employeeId      String             @map("employee_id")
+  locationId      String?            @map("location_id")
+  postedAt        DateTime?          @map("posted_at")
+  voidedAt        DateTime?          @map("voided_at")
+  voidReason      String             @default("") @map("void_reason")
+  voidedById      String?            @map("voided_by_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  customer  Customer              @relation(fields: [customerId], references: [id])
+  warehouse Warehouse             @relation(fields: [warehouseId], references: [id])
+  employee  Employee              @relation(fields: [employeeId], references: [id])
+  location  Location?             @relation(fields: [locationId], references: [id])
+  voidedBy  Employee?             @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+  lines     SalesInvoiceLine[]
+  payments  SalesInvoicePayment[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, reference])
+  @@index([companyId, status, transactionDate])
+  @@index([customerId])
+  @@index([warehouseId])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id          String      @id @default(cuid())
+  invoiceId   String      @map("invoice_id")
+  productId   String      @map("product_id")
+  productName String      @map("product_name")
+  sku         String      @default("")
+  unit        ProductUnit
+  quantity    Decimal     @db.Decimal(18, 4)
+  unitPrice   Decimal     @map("unit_price") @db.Decimal(18, 4)
+  discount    Decimal     @default(0) @db.Decimal(18, 4)
+  lineTotal   Decimal     @map("line_total") @db.Decimal(18, 4)
+  nrvRelease  Decimal     @default(0) @map("nrv_release") @db.Decimal(18, 4)
+  sortOrder   Int         @map("sort_order")
+
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("sales_invoice_lines")
+}
+
+/// Point-in-time IAS 2 measurement: carrying amount is the lower of weighted-average cost and net realizable value.
+model InventoryAssessment {
+  id              String    @id @default(cuid())
+  companyId       String    @default("tradivia") @map("company_id")
+  reference       String
+  transactionDate DateTime  @map("transaction_date") @db.Date
+  currency        Currency
+  fxRate          Decimal?  @map("fx_rate") @db.Decimal(18, 6)
+  notes           String    @default("")
+  employeeId      String    @map("employee_id")
+  locationId      String?   @map("location_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  employee Employee                  @relation(fields: [employeeId], references: [id])
+  location Location?                 @relation(fields: [locationId], references: [id])
+  lines    InventoryAssessmentLine[]
+
+  @@unique([companyId, reference])
+  @@index([companyId, transactionDate])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("inventory_assessments")
+}
+
+model InventoryAssessmentLine {
+  id               String   @id @default(cuid())
+  assessmentId     String   @map("assessment_id")
+  productId        String   @map("product_id")
+  quantity         Decimal  @db.Decimal(18, 4)
+  unitCost         Decimal  @map("unit_cost") @db.Decimal(18, 4)
+  unitNrv          Decimal  @map("unit_nrv") @db.Decimal(18, 4)
+  allowanceBefore  Decimal  @map("allowance_before") @db.Decimal(18, 4)
+  allowanceAfter   Decimal  @map("allowance_after") @db.Decimal(18, 4)
+
+  assessment InventoryAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  product    Product              @relation(fields: [productId], references: [id])
+
+  @@index([assessmentId])
+  @@index([productId])
+  @@map("inventory_assessment_lines")
+}
+
+model SalesInvoicePayment {
+  id         String             @id @default(cuid())
+  companyId  String             @default("tradivia") @map("company_id")
+  invoiceId  String             @map("invoice_id")
+  incomeId   String             @unique @map("income_id")
+  amount     Decimal            @db.Decimal(18, 4)
+  status     SalesPaymentStatus @default(POSTED)
+  reason     String             @default("")
+  employeeId String             @map("employee_id")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  invoice  SalesInvoice @relation(fields: [invoiceId], references: [id])
+  income   Income       @relation(fields: [incomeId], references: [id])
+  employee Employee     @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, invoiceId])
+  @@index([employeeId])
+  @@map("sales_invoice_payments")
+}
+
+model Supplier {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  phone     String       @default("")
+  address   String       @default("")
+  notes     String       @default("")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  invoices PurchaseInvoice[]
+
+  @@unique([companyId, name])
+  @@index([companyId, status])
+  @@map("suppliers")
+}
+
+/// Commercial purchase. Stock is received only when POSTED. Cash is a separate payment that creates an outcome.
+model PurchaseInvoice {
+  id              String             @id @default(cuid())
+  companyId       String             @default("tradivia") @map("company_id")
+  number          Int
+  reference       String
+  transactionDate DateTime           @map("transaction_date") @db.Date
+  supplierId      String             @map("supplier_id")
+  supplierName    String             @map("supplier_name")
+  warehouseId     String             @map("warehouse_id")
+  warehouseName   String             @map("warehouse_name")
+  currency        Currency
+  fxRate          Decimal?           @map("fx_rate") @db.Decimal(18, 6)
+  notes           String             @default("")
+  discount        Decimal            @default(0) @db.Decimal(18, 4)
+  subtotal        Decimal            @default(0) @db.Decimal(18, 4)
+  total           Decimal            @default(0) @db.Decimal(18, 4)
+  status          SalesInvoiceStatus @default(DRAFT)
+  employeeId      String             @map("employee_id")
+  locationId      String?            @map("location_id")
+  postedAt        DateTime?          @map("posted_at")
+  voidedAt        DateTime?          @map("voided_at")
+  voidReason      String             @default("") @map("void_reason")
+  voidedById      String?            @map("voided_by_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  supplier  Supplier                 @relation(fields: [supplierId], references: [id])
+  warehouse Warehouse                @relation(fields: [warehouseId], references: [id])
+  employee  Employee                 @relation(fields: [employeeId], references: [id])
+  location  Location?                @relation(fields: [locationId], references: [id])
+  voidedBy  Employee?                @relation("PurchaseVoidedBy", fields: [voidedById], references: [id])
+  lines     PurchaseInvoiceLine[]
+  payments  PurchaseInvoicePayment[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, reference])
+  @@index([companyId, status, transactionDate])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceLine {
+  id          String      @id @default(cuid())
+  invoiceId   String      @map("invoice_id")
+  productId   String      @map("product_id")
+  productName String      @map("product_name")
+  sku         String      @default("")
+  unit        ProductUnit
+  quantity    Decimal     @db.Decimal(18, 4)
+  unitPrice   Decimal     @map("unit_price") @db.Decimal(18, 4)
+  discount    Decimal     @default(0) @db.Decimal(18, 4)
+  lineTotal   Decimal     @map("line_total") @db.Decimal(18, 4)
+  sortOrder   Int         @map("sort_order")
+
+  invoice PurchaseInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@index([productId])
+  @@map("purchase_invoice_lines")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum BudgetStatus {
+  DRAFT
+  ACTIVE
+}
+
+/// Analytical dimension. A center mirrors a project, an office, or stands alone.
+enum CostCenterKind {
+  PROJECT
+  LOCATION
+  MANUAL
+}
+
+model Account {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  code      String
+  name      String
+  type      AccountType
+  status    RecordStatus @default(ACTIVE)
+  system        Boolean      @default(false)
+  /// IFRS presentation line. The reporting engine groups posted balances by this code.
+  statementLine String       @default("") @map("statement_line")
+  parentId      String?      @map("parent_id")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  parent      Account?      @relation("AccountTree", fields: [parentId], references: [id])
+  children    Account[]     @relation("AccountTree")
+  lines       JournalLine[]
+  budgetLines BudgetLine[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, name])
+  @@index([companyId, type])
+  @@index([parentId])
+  @@map("accounts")
+}
+
+model JournalEntry {
+  id              String        @id @default(cuid())
+  companyId       String        @default("tradivia") @map("company_id")
+  number          Int
+  transactionDate DateTime      @map("transaction_date") @db.Date
+  description     String        @default("")
+  status          JournalStatus @default(DRAFT)
+  employeeId      String        @map("employee_id")
+  locationId      String?       @map("location_id")
+  reversalOfId    String?       @unique @map("reversal_of_id")
+  sourceType      String?       @map("source_type")
+  sourceId        String?       @map("source_id")
+  sourceKey       String?       @unique @map("source_key")
+  exchange        Boolean       @default(false)
+  postedAt        DateTime?     @map("posted_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  employee   Employee       @relation(fields: [employeeId], references: [id])
+  location   Location?      @relation(fields: [locationId], references: [id])
+  reversalOf JournalEntry?  @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy JournalEntry?  @relation("JournalReversal")
+  lines      JournalLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status, transactionDate])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id        String   @id @default(cuid())
+  entryId   String   @map("entry_id")
+  accountId String   @map("account_id")
+  currency  Currency
+  debit     Decimal  @default(0) @db.Decimal(18, 4)
+  credit    Decimal  @default(0) @db.Decimal(18, 4)
+  memo      String   @default("")
+  sortOrder    Int      @map("sort_order")
+  costCenterId String?  @map("cost_center_id")
+  fxRate       Decimal? @map("fx_rate") @db.Decimal(18, 6)
+
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account    Account      @relation(fields: [accountId], references: [id])
+  costCenter CostCenter?  @relation(fields: [costCenterId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([costCenterId])
+  @@map("journal_lines")
+}
+
+model CostCenter {
+  id         String         @id @default(cuid())
+  companyId  String         @default("tradivia") @map("company_id")
+  code       String
+  name       String
+  kind       CostCenterKind
+  status     RecordStatus   @default(ACTIVE)
+  projectId  String?        @unique @map("project_id")
+  locationId String?        @unique @map("location_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  project  Project?      @relation(fields: [projectId], references: [id])
+  location Location?     @relation(fields: [locationId], references: [id])
+  lines    JournalLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("cost_centers")
+}
+
+model PurchaseInvoicePayment {
+  id         String             @id @default(cuid())
+  companyId  String             @default("tradivia") @map("company_id")
+  invoiceId  String             @map("invoice_id")
+  outcomeId  String             @unique @map("outcome_id")
+  amount     Decimal            @db.Decimal(18, 4)
+  status     SalesPaymentStatus @default(POSTED)
+  reason     String             @default("")
+  employeeId String             @map("employee_id")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  invoice  PurchaseInvoice @relation(fields: [invoiceId], references: [id])
+  outcome  Outcome         @relation(fields: [outcomeId], references: [id])
+  employee Employee        @relation(fields: [employeeId], references: [id])
+
+  @@index([companyId, invoiceId])
+  @@index([employeeId])
+  @@map("purchase_invoice_payments")
+}
+
+model AccountingPolicy {
+  id                  String   @id @default(cuid())
+  companyId           String   @unique @default("tradivia") @map("company_id")
+  functionalCurrency  Currency @default(USD) @map("functional_currency")
+  inventoryMethod     String   @default("WAC") @map("inventory_method")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("accounting_policies")
+}
+
+/// End-of-day remeasurement of the open foreign-currency position.
+model FxRevaluation {
+  id             String   @id @default(cuid())
+  companyId      String   @default("tradivia") @map("company_id")
+  asOf           DateTime @map("as_of") @db.Date
+  rate           Decimal  @db.Decimal(18, 6)
+  functional     Currency
+  foreignQty     Decimal  @map("foreign_qty") @db.Decimal(18, 4)
+  carrying       Decimal  @db.Decimal(18, 4)
+  closingValue   Decimal  @map("closing_value") @db.Decimal(18, 4)
+  gain           Decimal  @db.Decimal(18, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([companyId, asOf])
+  @@index([companyId])
+  @@map("fx_revaluations")
+}
+
+model FiscalYear {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  year      Int
+  status    PeriodStatus @default(OPEN)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  periods FiscalPeriod[]
+
+  @@unique([companyId, year])
+  @@index([companyId])
+  @@map("fiscal_years")
+}
+
+model FiscalPeriod {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  yearId    String       @map("year_id")
+  year      Int
+  month     Int
+  startsOn  DateTime     @map("starts_on") @db.Date
+  endsOn    DateTime     @map("ends_on") @db.Date
+  status    PeriodStatus @default(OPEN)
+  closedAt  DateTime?    @map("closed_at")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  yearRecord FiscalYear @relation(fields: [yearId], references: [id])
+
+  @@unique([companyId, year, month])
+  @@index([companyId, status])
+  @@map("fiscal_periods")
+}
+
+model Budget {
+  id        String       @id @default(cuid())
+  companyId String       @default("tradivia") @map("company_id")
+  name      String
+  year      Int
+  currency  Currency
+  status    BudgetStatus @default(DRAFT)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  lines BudgetLine[]
+
+  @@unique([companyId, year, currency, name])
+  @@index([companyId, year])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id        String  @id @default(cuid())
+  budgetId  String  @map("budget_id")
+  accountId String  @map("account_id")
+  month     Int
+  amount    Decimal @db.Decimal(18, 4)
+
+  budget  Budget  @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([budgetId, accountId, month])
+  @@index([accountId])
+  @@map("budget_lines")
+}

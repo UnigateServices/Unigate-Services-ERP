@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tradivia-finance-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: tradivia
+      POSTGRES_PASSWORD: tradivia
+      POSTGRES_DB: tradivia_finance
+    volumes:
+      - tradivia_pg_data:/var/lib/postgresql/data
+
+volumes:
+  tradivia_pg_data:

@@ -1,0 +1,164 @@
+<script>
+  /**
+   * إدارة الموظفين — مشرف فقط (إضافة / تعديل)
+   * فتح القسم فوري؛ التحميل من السيرفر بعد الرسم فقط
+   */
+  var ManageEmployees = {
+    ready: false,
+    cache: [],
+    loadedOnce: false,
+    editingOriginal: '',
+
+    ensureReady: function() {
+      if (typeof APP_INTERFACE !== 'undefined' && APP_INTERFACE !== 'supervisor') return;
+      this.bindOnce();
+      var panel = document.querySelector('.content-panel[data-section="manage-employees"]');
+      if (panel) AppI18n.apply(panel);
+      var self = this;
+      // إن كانت القائمة محمّلة مسبقاً لا نعيد الجلب عند كل نقرة
+      if (!this.loadedOnce) {
+        setTimeout(function() { self.load(); }, 0);
+      }
+    },
+
+    bindOnce: function() {
+      if (this.ready) return;
+      this.ready = true;
+      var self = this;
+      var btnAdd = document.getElementById('btnEmpAdd');
+      if (btnAdd) btnAdd.addEventListener('click', function() { self.openForm('add'); });
+      var btnSave = document.getElementById('btnEmpSave');
+      if (btnSave) btnSave.addEventListener('click', function() { self.save(); });
+      var btnCancel = document.getElementById('btnEmpCancel');
+      if (btnCancel) btnCancel.addEventListener('click', function() { self.closeForm(); });
+      var btnRefresh = document.getElementById('btnEmpRefresh');
+      if (btnRefresh) btnRefresh.addEventListener('click', function() { self.load(); });
+    },
+
+    load: function() {
+      var tbody = document.getElementById('tbody-employees');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" class="log-empty">' + AppI18n.t('log.loading') + '</td></tr>';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          res = res || {};
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res.success) {
+            tbody.innerHTML = '<tr><td colspan="4" class="log-empty-warn">' +
+              AppI18n.t(res.messageKey || 'auth.forbidden') + '</td></tr>';
+            return;
+          }
+          self.loadedOnce = true;
+          self.cache = res.rows || [];
+          self.render(self.cache);
+        })
+        .withFailureHandler(function() {
+          tbody.innerHTML = '<tr><td colspan="4" class="log-empty-warn" data-i18n="form.err.connection">' +
+            AppI18n.t('form.err.connection') + '</td></tr>';
+        })
+        .listManagedEmployees(AppLayout.getSession());
+    },
+
+    render: function(rows) {
+      var tbody = document.getElementById('tbody-employees');
+      if (!tbody) return;
+      var esc = AppUtils.escapeHtml;
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="log-empty">' + AppI18n.t('log.noRecords') + '</td></tr>';
+        return;
+      }
+      var html = '';
+      rows.forEach(function(row, idx) {
+        var roleLabel = row.role === 'مشرف' ? AppI18n.t('employees.roleSupervisor') : AppI18n.t('employees.roleEmployee');
+        var statusLabel = row.status === 'نشط' ? AppI18n.t('employees.statusActive') : AppI18n.t('employees.statusInactive');
+        html += '<tr>' +
+          '<td><b>' + esc(row.name) + '</b></td>' +
+          '<td>' + esc(roleLabel) + '</td>' +
+          '<td>' + esc(statusLabel) + '</td>' +
+          '<td><div class="log-actions">' +
+            '<button type="button" class="btn-log btn-log-edit" data-idx="' + idx + '">' +
+            AppI18n.t('log.edit') + '</button></div></td></tr>';
+      });
+      tbody.innerHTML = html;
+      tbody.querySelectorAll('.btn-log-edit').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var i = Number(btn.getAttribute('data-idx'));
+          ManageEmployees.openForm('edit', ManageEmployees.cache[i]);
+        });
+      });
+    },
+
+    openForm: function(mode, row) {
+      var box = document.getElementById('empFormBox');
+      if (!box) return;
+      box.classList.remove('hidden');
+      document.getElementById('emp-mode').value = mode;
+      this.editingOriginal = (row && row.name) || '';
+      document.getElementById('emp-original').value = this.editingOriginal;
+      document.getElementById('emp-name').value = (row && row.name) || '';
+      document.getElementById('emp-password').value = '';
+      document.getElementById('emp-role').value = (row && row.role) || 'موظف';
+      document.getElementById('emp-status').value = (row && row.status) || 'نشط';
+      var hint = document.getElementById('emp-pass-hint');
+      if (hint) hint.classList.toggle('hidden', mode !== 'edit');
+      ['emp-role', 'emp-status'].forEach(function(id) {
+        AppSelect.destroy(id);
+        if (document.getElementById(id)) AppSelect.enhance(id);
+      });
+      AppUtils.hideMessage('empMessage');
+      var title = document.getElementById('empFormTitle');
+      if (title) {
+        title.setAttribute('data-i18n', mode === 'edit' ? 'employees.editTitle' : 'employees.addTitle');
+        title.textContent = AppI18n.t(mode === 'edit' ? 'employees.editTitle' : 'employees.addTitle');
+      }
+    },
+
+    closeForm: function() {
+      var box = document.getElementById('empFormBox');
+      if (box) box.classList.add('hidden');
+      this.editingOriginal = '';
+      AppUtils.hideMessage('empMessage');
+    },
+
+    save: function() {
+      var mode = document.getElementById('emp-mode').value || 'add';
+      var payload = {
+        mode: mode,
+        name: (document.getElementById('emp-name') || {}).value || '',
+        password: (document.getElementById('emp-password') || {}).value || '',
+        role: (document.getElementById('emp-role') || {}).value || 'موظف',
+        status: (document.getElementById('emp-status') || {}).value || 'نشط',
+        originalName: (document.getElementById('emp-original') || {}).value || ''
+      };
+      AppUtils.setLoadingState('btnEmpSave', true, AppI18n.t('form.savingServer'));
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          AppUtils.setLoadingState('btnEmpSave', false, '', AppI18n.t('employees.save'));
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res || !res.success) {
+            AppUtils.showMessageKey('empMessage', (res && res.messageKey) || 'form.err.server', 'danger');
+            return;
+          }
+          AppUtils.showMessageKey('empMessage', res.messageKey || 'employees.updated', 'success');
+          self.closeForm();
+          self.load();
+        })
+        .withFailureHandler(function() {
+          AppUtils.setLoadingState('btnEmpSave', false, '', AppI18n.t('employees.save'));
+          AppUtils.showMessageKey('empMessage', 'form.err.connection', 'danger');
+        })
+        .saveManagedEmployee(AppLayout.getSession(), payload);
+    }
+  };
+
+  if (typeof AppI18n !== 'undefined' && AppI18n.onChange) {
+    AppI18n.onChange(function() {
+      if (!ManageEmployees.ready) return;
+      var panel = document.querySelector('.content-panel[data-section="manage-employees"]');
+      if (panel) AppI18n.apply(panel);
+      if (ManageEmployees.loadedOnce) ManageEmployees.render(ManageEmployees.cache || []);
+    });
+  }
+</script>

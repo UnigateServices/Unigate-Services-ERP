@@ -1,0 +1,784 @@
+<script>
+  /**
+   * نماذج واجهة الموظف — بناء ديناميكي + حفظ + منطق شرطي
+   * متوافق مع الترجمة الفورية (data-i18n) و AppSelect و AppUploader
+   */
+  var FORM_CONST = {
+    /** تُحدَّث ديناميكياً من السيرفر */
+    PROJECTS: [],
+    PROJECTS_INCOME: [],
+    PROJECTS_ADVANCES: [],
+    PROJECTS_REPORTS: [],
+    FUNDS_VAULT_SHAM: [
+      { value: 'الخزنة', i18n: 'fund.vault' },
+      { value: 'شام كاش', i18n: 'fund.sham' }
+    ],
+    FUNDS_VAULT_SHAM_BANK: [
+      { value: 'الخزنة', i18n: 'fund.vault' },
+      { value: 'شام كاش', i18n: 'fund.sham' },
+      { value: 'البنك', i18n: 'fund.bank' }
+    ],
+    FUNDS_ALL: [
+      { value: 'الخزنة', i18n: 'fund.vault' },
+      { value: 'شام كاش', i18n: 'fund.sham' },
+      { value: 'السلف', i18n: 'fund.advances' },
+      { value: 'البنك', i18n: 'fund.bank' }
+    ],
+    BORROWERS: [],
+    BANKS: [],
+    PROJECTS_RAW: [],
+    SECTION_KEYS: {
+      income: 'IN', outcome: 'OUT', exchange: 'EX', transfer: 'TR', advances: 'AD'
+    }
+  };
+
+  function borrowerLabel(name) {
+    return name || '—';
+  }
+
+  function currencyLabel(name) {
+    if (name === 'دولار' || name === 'USD') return AppI18n.t('currency.usd');
+    if (name === 'ليرة سورية' || name === 'SYP') return AppI18n.t('currency.syp');
+    return name || '—';
+  }
+
+  function displayProject(v) {
+    if (!v || v === '-') return '—';
+    if (v === 'المكتب') return AppI18n.t('project.office');
+    if (v === 'رأس مال') return AppI18n.t('project.capital');
+    if (v === 'مزرعة الأبقار') return AppI18n.t('project.farm');
+    if (v === 'محلات الصناعة') return AppI18n.t('project.shops');
+    return v;
+  }
+
+  function displayFund(v) {
+    if (v === 'الخزنة') return AppI18n.t('fund.vault');
+    if (v === 'شام كاش') return AppI18n.t('fund.sham');
+    if (v === 'السلف') return AppI18n.t('fund.advances');
+    if (v === 'البنك') return AppI18n.t('fund.bank');
+    return v || '—';
+  }
+
+  function displayBank(v) {
+    return (v && v !== '-') ? v : '—';
+  }
+
+  function refillSelectOptions_(id, options, placeholderKey, keepValue) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var cur = keepValue !== false ? sel.value : '';
+    var html = '';
+    if (placeholderKey) {
+      html += '<option value="" data-i18n="' + placeholderKey + '">' +
+        ((typeof AppI18n !== 'undefined') ? AppI18n.t(placeholderKey) : 'اختر...') + '</option>';
+    }
+    (options || []).forEach(function(opt) {
+      if (typeof opt === 'string') {
+        html += '<option value="' + AppUtils.escapeHtml(opt) + '">' + AppUtils.escapeHtml(opt) + '</option>';
+      } else {
+        var label = (opt.i18n && typeof AppI18n !== 'undefined') ? AppI18n.t(opt.i18n) : opt.value;
+        html += '<option value="' + AppUtils.escapeHtml(opt.value) + '"' +
+          (opt.i18n ? ' data-i18n="' + opt.i18n + '"' : '') + '>' +
+          AppUtils.escapeHtml(label) + '</option>';
+      }
+    });
+    sel.innerHTML = html;
+    if (cur) sel.value = cur;
+    if (typeof AppSelect !== 'undefined') {
+      AppSelect.destroy(id);
+      AppSelect.enhance(id);
+    }
+  }
+
+  function refreshBorrowersIntoForms(names) {
+    FORM_CONST.BORROWERS = (names || []).map(function(n) {
+      return { value: n };
+    });
+    ['transfer-borrower', 'advances-borrower'].forEach(function(id) {
+      refillSelectOptions_(id, FORM_CONST.BORROWERS, 'select.chooseOption', true);
+    });
+    if (typeof rebuildBorrowerFilterOptions === 'function') rebuildBorrowerFilterOptions();
+  }
+
+  function loadBorrowersFromServer() {
+    google.script.run
+      .withSuccessHandler(function(list) {
+        refreshBorrowersIntoForms(list || []);
+      })
+      .withFailureHandler(function() { /* تبقى القائمة فارغة */ })
+      .getActiveBorrowersList();
+  }
+
+  function projectsForPlace_(place) {
+    return (FORM_CONST.PROJECTS_RAW || [])
+      .filter(function(p) {
+        return (p.showIn || []).indexOf(place) !== -1;
+      })
+      .map(function(p) {
+        return { value: p.name };
+      });
+  }
+
+  function refreshProjectsIntoForms(items) {
+    FORM_CONST.PROJECTS_RAW = items || [];
+    FORM_CONST.PROJECTS = projectsForPlace_('صادر');
+    FORM_CONST.PROJECTS_INCOME = projectsForPlace_('وارد');
+    FORM_CONST.PROJECTS_ADVANCES = projectsForPlace_('سلف');
+    FORM_CONST.PROJECTS_REPORTS = projectsForPlace_('تقارير');
+
+    refillSelectOptions_('income-project', FORM_CONST.PROJECTS_INCOME, 'select.chooseOption', true);
+    refillSelectOptions_('outcome-project', FORM_CONST.PROJECTS, 'select.chooseOption', true);
+    refillSelectOptions_('advances-project', FORM_CONST.PROJECTS_ADVANCES, 'select.chooseOption', true);
+
+    if (typeof rebuildProjectFilterOptions === 'function') rebuildProjectFilterOptions();
+  }
+
+  function loadProjectsFromServer() {
+    google.script.run
+      .withSuccessHandler(function(list) {
+        refreshProjectsIntoForms(list || []);
+      })
+      .withFailureHandler(function() { /* تبقى القائمة فارغة */ })
+      .getActiveProjectsList();
+  }
+
+  function refreshBanksIntoForms(names) {
+    FORM_CONST.BANKS = (names || []).map(function(n) {
+      return { value: n };
+    });
+    [
+      'income-bank', 'outcome-bank', 'exchange-bank',
+      'transfer-fromBank', 'transfer-toBank'
+    ].forEach(function(id) {
+      refillSelectOptions_(id, FORM_CONST.BANKS, 'select.chooseOption', true);
+    });
+    if (typeof rebuildBankFilterOptions === 'function') rebuildBankFilterOptions();
+  }
+
+  function loadBanksFromServer() {
+    google.script.run
+      .withSuccessHandler(function(list) {
+        refreshBanksIntoForms(list || []);
+      })
+      .withFailureHandler(function() { /* تبقى القائمة فارغة */ })
+      .getActiveBanksList();
+  }
+
+  function amountInputHtml(id, oninput) {
+    return '<input type="text" class="input-amount" id="' + id + '" inputmode="decimal" autocomplete="off"' +
+      (oninput ? ' oninput="' + oninput + '"' : '') + '>';
+  }
+
+  /** اسم حقل مع وسم يوضّح عملته (يُحدَّث مع تغيّر اتجاه التصريف) */
+  function labelWithCurrencyHtml(i18nKey, fallback, tagId) {
+    return '<label><span data-i18n="' + i18nKey + '">' + fallback + '</span>' +
+      '<span class="field-cur" id="' + tagId + '"></span></label>';
+  }
+
+  /**
+   * حقول التصريف الثلاثة بقاعدة النظام الموحّدة:
+   * المبلغ بعملة المصدر، سعر الصرف بالليرة مقابل دولار واحد، والإجمالي محسوب بعملة الوجهة
+   */
+  function exchangeAmountRateTotalHtml(prefix) {
+    const recalc = 'calculateTotal(\'' + prefix + '\')';
+    let html = '';
+    html += '<div class="form-group">';
+    html += labelWithCurrencyHtml('form.exchangeAmount', 'المبلغ المراد تصريفه', prefix + '-amount-cur');
+    html += amountInputHtml(prefix + '-amount', recalc);
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.exchangeRate">سعر الصرف</label>';
+    html += amountInputHtml(prefix + '-rate', recalc);
+    html += '  <small class="field-hint" data-i18n="form.exchangeRateHint">ليرة سورية مقابل دولار واحد</small>';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += labelWithCurrencyHtml('form.total', 'الإجمالي', prefix + '-total-cur');
+    html += '  <input type="text" class="input-amount" id="' + prefix + '-total" readonly style="font-weight:700;color:var(--primary-color);">';
+    html += '</div>';
+    return html;
+  }
+
+  function formSelectHtml(id, options, placeholderKey) {
+    let html = '<div class="app-select"><select id="' + id + '">';
+    if (placeholderKey) {
+      var ph = (typeof AppI18n !== 'undefined') ? AppI18n.t(placeholderKey) : 'اختر...';
+      html += '<option value="" data-i18n="' + placeholderKey +'">' + ph + '</option>';
+    }
+    options.forEach(function(opt) {
+      if (typeof opt === 'string') {
+        html += '<option value="' + opt + '">' + opt + '</option>';
+      } else {
+        html += '<option value="' + AppUtils.escapeHtml(opt.value) + '"' +
+          (opt.i18n ? ' data-i18n="' + opt.i18n + '"' : '') + '>' +
+          AppUtils.escapeHtml((opt.i18n && typeof AppI18n !== 'undefined') ? AppI18n.t(opt.i18n) : (opt.value || '')) + '</option>';
+      }
+    });
+    html += '</select></div>';
+    return html;
+  }
+
+  function formOpNumberHtml(prefix) {
+    return '<div class="form-group">' +
+      '<label data-i18n="form.opNumber">رقم العملية</label>' +
+      '<div class="op-number-card">' +
+      '<span class="op-number-value" id="' + prefix + '-opNumber">—</span>' +
+      '</div></div>';
+  }
+
+  function formDateHtml(prefix) {
+    return '<div class="form-group">' +
+      '<label data-i18n="form.trxDate">تاريخ العملية</label>' +
+      '<input type="date" id="' + prefix + '-trxDate">' +
+      '</div>';
+  }
+
+  function formUploaderHtml(prefix) {
+    return '<div class="form-group full-width">' +
+      '<label data-i18n="form.attachment">المرفق</label>' +
+      '<div id="' + prefix + '-uploader"></div>' +
+      '</div>';
+  }
+
+  function formCurrencyOptions() {
+    return [
+      { value: 'دولار', i18n: 'currency.usd' },
+      { value: 'ليرة سورية', i18n: 'currency.syp' }
+    ];
+  }
+
+  function enhanceSelects(ids) {
+    ids.forEach(function(id) {
+      if (document.getElementById(id)) AppSelect.enhance(id);
+    });
+  }
+
+  function loadOpNumber(prefix) {
+    const sectionKey = FORM_CONST.SECTION_KEYS[prefix];
+    if (!sectionKey) return;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (typeof AppLayout !== 'undefined' && AppLayout.handleAuthResult && AppLayout.handleAuthResult(res)) return;
+        const el = document.getElementById(prefix + '-opNumber');
+        if (el) el.textContent = (res && res.number) ? res.number : '1';
+      })
+      .withFailureHandler(function() {
+        const el = document.getElementById(prefix + '-opNumber');
+        if (el) el.textContent = '1';
+      })
+      .getNextOperationNumber(AppLayout.getSession(), sectionKey);
+  }
+
+  function refreshAllOpNumbers() {
+    Object.keys(FORM_CONST.SECTION_KEYS).forEach(loadOpNumber);
+  }
+
+  function setDefaultTrxDate(prefix) {
+    const el = document.getElementById(prefix + '-trxDate');
+    if (el && !el.value) el.value = AppUtils.todayInputValue();
+  }
+
+  function mountUploader(prefix) {
+    AppUploader.mount(prefix + '-uploader', prefix + '-attachments');
+  }
+
+  /* ===== بناء النماذج ===== */
+  function buildAddForms() {
+    buildInOutForm('form-add-income', 'income', 'وارد');
+    buildInOutForm('form-add-outcome', 'outcome', 'صادر');
+    buildExchangeForm('form-add-exchange');
+    buildTransferForm('form-add-transfer');
+    buildAdvancesForm('form-add-advances');
+    loadProjectsFromServer();
+    loadBanksFromServer();
+    refreshAllOpNumbers();
+  }
+
+  function buildInOutForm(containerId, prefix, type) {
+    const senderKey = type === 'وارد' ? 'form.sender' : 'form.deliverer';
+    const projects = type === 'وارد' ? FORM_CONST.PROJECTS_INCOME : FORM_CONST.PROJECTS;
+    let html = '';
+    html += formOpNumberHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.fund">الصندوق</label>';
+    html += formSelectHtml(prefix + '-fund', FORM_CONST.FUNDS_VAULT_SHAM_BANK);
+    html += '</div>';
+    html += '<div class="form-group hidden" id="' + prefix + '-bank-wrap">';
+    html += '  <label data-i18n="form.bank">البنك</label>';
+    html += formSelectHtml(prefix + '-bank', FORM_CONST.BANKS, 'select.chooseOption');
+    html += '</div>';
+    html += formDateHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.project">المشروع</label>';
+    html += formSelectHtml(prefix + '-project', projects, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.description">الوصف</label>';
+    html += '  <input type="text" id="' + prefix + '-description">';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="' + senderKey + '">—</label>';
+    html += '  <input type="text" id="' + prefix + '-sender">';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.receiver">اسم المستلم</label>';
+    html += '  <input type="text" id="' + prefix + '-receiver">';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.currency">العملة</label>';
+    html += formSelectHtml(prefix + '-currency', formCurrencyOptions());
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.quantity">الكمية</label>';
+    html += amountInputHtml(prefix + '-quantity', 'calculateTotal(\'' + prefix + '\')');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.amount">المبلغ</label>';
+    html += amountInputHtml(prefix + '-amount', 'calculateTotal(\'' + prefix + '\')');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.total">الإجمالي</label>';
+    html += '  <input type="text" class="input-amount" id="' + prefix + '-total" readonly style="font-weight:700;color:var(--primary-color);">';
+    html += '</div>';
+    html += formUploaderHtml(prefix);
+    html += '<div class="form-group full-width">';
+    html += '  <label data-i18n="form.notes">ملاحظات</label>';
+    html += '  <input type="text" id="' + prefix + '-notes">';
+    html += '</div>';
+
+    document.getElementById(containerId).innerHTML = html;
+    enhanceSelects([prefix + '-fund', prefix + '-bank', prefix + '-project', prefix + '-currency']);
+    setDefaultTrxDate(prefix);
+    mountUploader(prefix);
+    AppUtils.bindAmountInputs(document.getElementById(containerId));
+    var fundEl = document.getElementById(prefix + '-fund');
+    if (fundEl) {
+      fundEl.addEventListener('change', function() { updateFundBankWrap_(prefix); });
+      updateFundBankWrap_(prefix);
+    }
+  }
+
+  function updateFundBankWrap_(prefix) {
+    var fund = (document.getElementById(prefix + '-fund') || {}).value || '';
+    toggleEl(prefix + '-bank-wrap', fund === 'البنك');
+  }
+
+  function buildExchangeForm(containerId) {
+    const prefix = 'exchange';
+    let html = '';
+    html += formOpNumberHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.fund">الصندوق</label>';
+    html += formSelectHtml(prefix + '-fund', FORM_CONST.FUNDS_VAULT_SHAM_BANK);
+    html += '</div>';
+    html += '<div class="form-group hidden" id="exchange-bank-wrap">';
+    html += '  <label data-i18n="form.bank">البنك</label>';
+    html += formSelectHtml(prefix + '-bank', FORM_CONST.BANKS, 'select.chooseOption');
+    html += '</div>';
+    html += formDateHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.exchangeType">نوع التصريف</label>';
+    html += '  <div class="app-select"><select id="exchange-type">';
+    html += '    <option value="شراء" data-i18n="exchange.buy">شراء</option>';
+    html += '    <option value="بيع" data-i18n="exchange.sell">بيع</option>';
+    html += '  </select></div>';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.paidCurrency">العملة المدفوعة</label>';
+    html += '  <input type="hidden" id="exchange-paid">';
+    html += '  <input type="text" id="exchange-paid-display" disabled>';
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.receivedCurrency">العملة المستلمة</label>';
+    html += '  <input type="hidden" id="exchange-received">';
+    html += '  <input type="text" id="exchange-received-display" disabled>';
+    html += '</div>';
+    html += exchangeAmountRateTotalHtml('exchange');
+    html += formUploaderHtml(prefix);
+    html += '<div class="form-group full-width">';
+    html += '  <label data-i18n="form.notes">ملاحظات</label>';
+    html += '  <input type="text" id="exchange-notes">';
+    html += '</div>';
+
+    document.getElementById(containerId).innerHTML = html;
+    enhanceSelects([prefix + '-fund', prefix + '-bank', 'exchange-type']);
+    setDefaultTrxDate(prefix);
+    mountUploader(prefix);
+    AppUtils.bindAmountInputs(document.getElementById(containerId));
+    document.getElementById('exchange-type').addEventListener('change', handleExchangeLogic);
+    var exFund = document.getElementById('exchange-fund');
+    if (exFund) {
+      exFund.addEventListener('change', function() { updateFundBankWrap_('exchange'); });
+      updateFundBankWrap_('exchange');
+    }
+    handleExchangeLogic();
+  }
+
+  function buildTransferForm(containerId) {
+    const prefix = 'transfer';
+    let html = '';
+    html += formOpNumberHtml(prefix);
+    html += formDateHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.fromFund">الصندوق المرسل</label>';
+    html += formSelectHtml(prefix + '-fromFund', FORM_CONST.FUNDS_VAULT_SHAM_BANK, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group hidden" id="transfer-fromBank-wrap">';
+    html += '  <label data-i18n="form.fromBank">البنك المرسل</label>';
+    html += formSelectHtml(prefix + '-fromBank', FORM_CONST.BANKS, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.toFund">الصندوق المستلم</label>';
+    html += formSelectHtml(prefix + '-toFund', FORM_CONST.FUNDS_ALL, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group hidden" id="transfer-toBank-wrap">';
+    html += '  <label data-i18n="form.toBank">البنك المستلم</label>';
+    html += formSelectHtml(prefix + '-toBank', FORM_CONST.BANKS, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group hidden" id="transfer-borrower-wrap">';
+    html += '  <label data-i18n="form.borrower">المستلف</label>';
+    html += formSelectHtml(prefix + '-borrower', FORM_CONST.BORROWERS, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.currency">العملة</label>';
+    html += formSelectHtml(prefix + '-currency', formCurrencyOptions());
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.amount">المبلغ</label>';
+    html += amountInputHtml(prefix + '-amount');
+    html += '</div>';
+    html += formUploaderHtml(prefix);
+    html += '<div class="form-group full-width">';
+    html += '  <label data-i18n="form.notes">ملاحظات</label>';
+    html += '  <input type="text" id="' + prefix + '-notes">';
+    html += '</div>';
+
+    document.getElementById(containerId).innerHTML = html;
+    enhanceSelects([
+      'transfer-fromFund', 'transfer-toFund', 'transfer-fromBank', 'transfer-toBank',
+      'transfer-borrower', 'transfer-currency'
+    ]);
+    setDefaultTrxDate(prefix);
+    mountUploader(prefix);
+    AppUtils.bindAmountInputs(document.getElementById(containerId));
+    document.getElementById('transfer-fromFund').addEventListener('change', updateTransferConditionals);
+    document.getElementById('transfer-toFund').addEventListener('change', updateTransferConditionals);
+    updateTransferConditionals();
+  }
+
+  function updateTransferConditionals() {
+    const fromF = (document.getElementById('transfer-fromFund') || {}).value || '';
+    const toF = (document.getElementById('transfer-toFund') || {}).value || '';
+    const involvesAdv = fromF === 'السلف' || toF === 'السلف';
+
+    toggleEl('transfer-fromBank-wrap', fromF === 'البنك');
+    toggleEl('transfer-toBank-wrap', toF === 'البنك');
+    toggleEl('transfer-borrower-wrap', involvesAdv);
+  }
+
+  function toggleEl(id, show) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !show);
+  }
+
+  function buildAdvancesForm(containerId) {
+    const prefix = 'advances';
+    let html = '';
+    html += formOpNumberHtml(prefix);
+    html += formDateHtml(prefix);
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.borrower">المستلف</label>';
+    html += formSelectHtml(prefix + '-borrower', FORM_CONST.BORROWERS, 'select.chooseOption');
+    html += '</div>';
+    html += '<div class="form-group">';
+    html += '  <label data-i18n="form.advType">نوع العملية</label>';
+    html += '  <div class="app-select"><select id="advances-advType">';
+    html += '    <option value="صادر" data-i18n="sidebar.outcome">صادر</option>';
+    html += '    <option value="تصريف" data-i18n="sidebar.exchange">تصريف</option>';
+    html += '  </select></div>';
+    html += '</div>';
+    html += '<div id="advances-dynamic-fields" class="full-width" style="display:contents;"></div>';
+
+    document.getElementById(containerId).innerHTML = html;
+    enhanceSelects(['advances-borrower', 'advances-advType']);
+    setDefaultTrxDate(prefix);
+    document.getElementById('advances-advType').addEventListener('change', renderAdvancesBranchFields);
+    renderAdvancesBranchFields();
+  }
+
+  function renderAdvancesBranchFields() {
+    const type = (document.getElementById('advances-advType') || {}).value || 'صادر';
+    const host = document.getElementById('advances-dynamic-fields');
+    if (!host) return;
+    let html = '';
+
+    if (type === 'صادر') {
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.project">المشروع</label>';
+      html += formSelectHtml('advances-project', FORM_CONST.PROJECTS_ADVANCES, 'select.chooseOption');
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.description">الوصف</label>';
+      html += '  <input type="text" id="advances-description">';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.receiver">اسم المستلم</label>';
+      html += '  <input type="text" id="advances-receiver">';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.currency">العملة</label>';
+      html += formSelectHtml('advances-currency', formCurrencyOptions());
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.quantity">الكمية</label>';
+      html += amountInputHtml('advances-quantity', 'calculateTotal(\'advances\')');
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.amount">المبلغ</label>';
+      html += amountInputHtml('advances-amount', 'calculateTotal(\'advances\')');
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.total">الإجمالي</label>';
+      html += '  <input type="text" class="input-amount" id="advances-total" readonly style="font-weight:700;color:var(--primary-color);">';
+      html += '</div>';
+    } else {
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.fromCurrency">من عملة</label>';
+      html += formSelectHtml('advances-fromCurrency', formCurrencyOptions());
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '  <label data-i18n="form.toCurrency">إلى عملة</label>';
+      html += formSelectHtml('advances-toCurrency', formCurrencyOptions());
+      html += '</div>';
+      html += exchangeAmountRateTotalHtml('advances');
+    }
+
+    html += formUploaderHtml('advances');
+    html += '<div class="form-group full-width">';
+    html += '  <label data-i18n="form.notes">ملاحظات</label>';
+    html += '  <input type="text" id="advances-notes">';
+    html += '</div>';
+
+    ['advances-project', 'advances-currency', 'advances-fromCurrency', 'advances-toCurrency', 'advances-attachments'].forEach(function(id) {
+      if (typeof AppSelect !== 'undefined') AppSelect.destroy(id);
+    });
+    host.innerHTML = html;
+    if (type === 'صادر') {
+      enhanceSelects(['advances-project', 'advances-currency']);
+    } else {
+      enhanceSelects(['advances-fromCurrency', 'advances-toCurrency']);
+      const fromEl = document.getElementById('advances-fromCurrency');
+      const toEl = document.getElementById('advances-toCurrency');
+      if (fromEl && toEl) {
+        const syncAdvancesDirection = function() {
+          toEl.value = fromEl.value === 'دولار' ? 'ليرة سورية' : 'دولار';
+          AppSelect.refresh('advances-toCurrency');
+          calculateTotal('advances');
+        };
+        syncAdvancesDirection();
+        fromEl.addEventListener('change', syncAdvancesDirection);
+      }
+    }
+    mountUploader('advances');
+    AppUtils.bindAmountInputs(host);
+    if (typeof AppI18n !== 'undefined') AppI18n.apply(host);
+  }
+
+  /* ===== الحفظ ===== */
+  async function saveTransaction(type) {
+    const prefixMap = {
+      'وارد': 'income',
+      'صادر': 'outcome',
+      'تصريف': 'exchange',
+      'تحويل': 'transfer',
+      'سلفة': 'advances'
+    };
+    const prefix = prefixMap[type];
+    const btnId = 'saveBtn-' + prefix;
+    const msgId = 'formMessage-' + prefix;
+    const employee = sessionStorage.getItem('currentUser') || 'غير معروف';
+
+    let transactionData = {
+      type: type,
+      employee: employee,
+      notes: val(prefix + '-notes'),
+      trxDate: val(prefix + '-trxDate') || AppUtils.todayInputValue()
+    };
+
+    if (type === 'وارد' || type === 'صادر') {
+      transactionData.fund = val(prefix + '-fund');
+      transactionData.bank = val(prefix + '-bank');
+      transactionData.project = val(prefix + '-project');
+      transactionData.description = val(prefix + '-description');
+      transactionData.sender = val(prefix + '-sender');
+      transactionData.receiver = val(prefix + '-receiver');
+      transactionData.currency = val(prefix + '-currency');
+      transactionData.quantity = numVal(prefix + '-quantity');
+      transactionData.amount = numVal(prefix + '-amount');
+      transactionData.total = numVal(prefix + '-total');
+      if (!transactionData.project) {
+        AppUtils.showMessageKey(msgId, 'form.err.projectRequired', 'danger');
+        return;
+      }
+      if (transactionData.fund === 'البنك' && !transactionData.bank) {
+        AppUtils.showMessageKey(msgId, 'form.err.bankRequired', 'danger');
+        return;
+      }
+      if (!transactionData.total || Number(transactionData.total) <= 0) {
+        AppUtils.showMessageKey(msgId, 'form.err.amountInvalid', 'danger');
+        return;
+      }
+    } else if (type === 'تصريف') {
+      transactionData.fund = val('exchange-fund');
+      transactionData.bank = val('exchange-bank');
+      transactionData.exchangeType = val('exchange-type');
+      transactionData.paidCurrency = val('exchange-paid');
+      transactionData.receivedCurrency = val('exchange-received');
+      transactionData.exchangeAmount = numVal('exchange-amount');
+      transactionData.exchangeRate = numVal('exchange-rate');
+      transactionData.total = numVal('exchange-total');
+      if (transactionData.fund === 'البنك' && !transactionData.bank) {
+        AppUtils.showMessageKey(msgId, 'form.err.bankRequired', 'danger');
+        return;
+      }
+      if (!transactionData.total || Number(transactionData.total) <= 0) {
+        AppUtils.showMessageKey(msgId, 'form.err.amountInvalid', 'danger');
+        return;
+      }
+    } else if (type === 'تحويل') {
+      transactionData.fromFund = val('transfer-fromFund');
+      transactionData.toFund = val('transfer-toFund');
+      transactionData.fromBank = val('transfer-fromBank');
+      transactionData.toBank = val('transfer-toBank');
+      transactionData.currency = val('transfer-currency');
+      transactionData.amount = numVal('transfer-amount');
+      transactionData.borrower = val('transfer-borrower');
+      if (!transactionData.fromFund || !transactionData.toFund) {
+        AppUtils.showMessageKey(msgId, 'form.err.fundsRequired', 'danger');
+        return;
+      }
+      if (transactionData.fromFund === transactionData.toFund &&
+          !(transactionData.fromFund === 'البنك' && transactionData.fromBank !== transactionData.toBank)) {
+        AppUtils.showMessageKey(msgId, 'form.err.sameFund', 'danger');
+        return;
+      }
+      if (transactionData.fromFund === 'البنك' && !transactionData.fromBank) {
+        AppUtils.showMessageKey(msgId, 'form.err.bankRequired', 'danger');
+        return;
+      }
+      if (transactionData.toFund === 'البنك' && !transactionData.toBank) {
+        AppUtils.showMessageKey(msgId, 'form.err.bankRequired', 'danger');
+        return;
+      }
+      if ((transactionData.fromFund === 'السلف' || transactionData.toFund === 'السلف') && !transactionData.borrower) {
+        AppUtils.showMessageKey(msgId, 'form.err.borrowerRequired', 'danger');
+        return;
+      }
+      if (!transactionData.amount || Number(transactionData.amount) <= 0) {
+        AppUtils.showMessageKey(msgId, 'form.err.amountInvalid', 'danger');
+        return;
+      }
+    } else if (type === 'سلفة') {
+      transactionData.borrower = val('advances-borrower');
+      transactionData.advType = val('advances-advType');
+      if (!transactionData.borrower) {
+        AppUtils.showMessageKey(msgId, 'form.err.borrowerRequired', 'danger');
+        return;
+      }
+      if (transactionData.advType === 'صادر') {
+        transactionData.project = val('advances-project');
+        transactionData.description = val('advances-description');
+        transactionData.receiver = val('advances-receiver');
+        transactionData.currency = val('advances-currency');
+        transactionData.quantity = numVal('advances-quantity');
+        transactionData.amount = numVal('advances-amount');
+        transactionData.total = numVal('advances-total');
+        if (!transactionData.project) {
+          AppUtils.showMessageKey(msgId, 'form.err.projectRequired', 'danger');
+          return;
+        }
+        if (!transactionData.total || Number(transactionData.total) <= 0) {
+          AppUtils.showMessageKey(msgId, 'form.err.amountInvalid', 'danger');
+          return;
+        }
+      } else {
+        transactionData.fromCurrency = val('advances-fromCurrency');
+        transactionData.toCurrency = val('advances-toCurrency');
+        transactionData.amount = numVal('advances-amount');
+        transactionData.exchangeRate = numVal('advances-rate');
+        transactionData.total = numVal('advances-total');
+        if (transactionData.fromCurrency === transactionData.toCurrency) {
+          AppUtils.showMessageKey(msgId, 'form.err.sameCurrency', 'danger');
+          return;
+        }
+        if (!transactionData.total || Number(transactionData.total) <= 0) {
+          AppUtils.showMessageKey(msgId, 'form.err.amountInvalid', 'danger');
+          return;
+        }
+      }
+    }
+
+    AppUtils.setLoadingState(btnId, true, AppI18n.t('form.saving'));
+    AppUtils.hideMessage(msgId);
+
+    try {
+      const attachmentsArray = await AppUploader.toAttachments(prefix + '-attachments');
+      if (attachmentsArray.length > AppUploader.MAX_FILES) {
+        AppUtils.showMessageKey(msgId, 'form.err.maxAttachments', 'danger');
+        AppUtils.setLoadingState(btnId, false, '', AppI18n.t('form.save'));
+        return;
+      }
+
+      AppUtils.setLoadingState(btnId, true, AppI18n.t('form.savingServer'));
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response.sessionExpired || response.sessionLocked) {
+            AppLayout.handleAuthResult(response);
+            return;
+          }
+          if (response.success) {
+            AppUtils.showMessageKey(msgId, response.messageKey || 'form.saved', 'success');
+            resetFormAfterSave(prefix, type);
+            updateSafeBalances();
+            loadTransactions();
+            refreshAllOpNumbers();
+          } else {
+            AppUtils.showMessageKey(msgId, response.messageKey || 'form.err.unexpected', 'danger');
+          }
+          AppUtils.setLoadingState(btnId, false, '', AppI18n.t('form.save'));
+        })
+        .withFailureHandler(function() {
+          AppUtils.showMessageKey(msgId, 'form.err.connection', 'danger');
+          AppUtils.setLoadingState(btnId, false, '', AppI18n.t('form.save'));
+        })
+        .processTransaction(AppLayout.getSession(), transactionData, attachmentsArray);
+    } catch (err) {
+      AppUtils.showMessageKey(msgId, 'form.err.unexpected', 'danger');
+      AppUtils.setLoadingState(btnId, false, '', AppI18n.t('form.save'));
+    }
+  }
+
+  function val(id) {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  }
+
+  function numVal(id) {
+    const raw = AppUtils.parseFormattedNumber(val(id));
+    return raw === '' ? '' : raw;
+  }
+
+  function resetFormAfterSave(prefix, type) {
+    const root = document.getElementById('form-add-' + prefix);
+    if (!root) return;
+    root.querySelectorAll('input:not([disabled]):not([type="hidden"])').forEach(function(el) {
+      if (el.type === 'date') el.value = AppUtils.todayInputValue();
+      else if (el.type !== 'file') el.value = '';
+    });
+    AppUploader.clear(prefix + '-attachments');
+    if (type === 'تصريف') handleExchangeLogic();
+    if (type === 'سلفة') renderAdvancesBranchFields();
+    if (type === 'تحويل') updateTransferConditionals();
+    if (typeof AppI18n !== 'undefined') AppI18n.apply();
+  }
+</script>

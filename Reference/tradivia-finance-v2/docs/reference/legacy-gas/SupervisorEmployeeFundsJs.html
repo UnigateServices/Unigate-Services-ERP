@@ -1,0 +1,225 @@
+<script>
+  /**
+   * أرصدة صناديق موظف — نظرة عامة للمشرف (بدون تكرار سجل العمليات)
+   */
+  var EmployeeFunds = {
+    ready: false,
+    employeesLoaded: false,
+    currentEmployee: '',
+    lastOverview: null,
+
+    ensureReady: function() {
+      if (typeof APP_INTERFACE !== 'undefined' && APP_INTERFACE !== 'supervisor') return;
+      this.bindOnce();
+      var panel = document.querySelector('.content-panel[data-section="employee-funds"]');
+      if (panel) AppI18n.apply(panel);
+      this.loadEmployees();
+    },
+
+    bindOnce: function() {
+      if (this.ready) return;
+      this.ready = true;
+      var self = this;
+      var sel = document.getElementById('empFunds-employee');
+      if (sel) sel.addEventListener('change', function() { self.onEmployeeChange(); });
+      var btnRefresh = document.getElementById('btnEmpFundsRefresh');
+      if (btnRefresh) btnRefresh.addEventListener('click', function() { self.loadOverview(); });
+      if (typeof AppI18n !== 'undefined' && AppI18n.onChange) {
+        AppI18n.onChange(function() {
+          var panel = document.querySelector('.content-panel[data-section="employee-funds"]');
+          if (panel) AppI18n.apply(panel);
+          if (self.employeesLoaded) self.fillEmployeeSelect(window.__empFundsEmployeesList || []);
+          if (self.lastOverview) self.renderOverview(self.lastOverview);
+          else if (!self.currentEmployee) self.renderEmpty(AppI18n.t('empFunds.pickEmployee'));
+        });
+      }
+    },
+
+    loadEmployees: function() {
+      var self = this;
+      if (this.employeesLoaded && window.__empFundsEmployeesList) {
+        this.fillEmployeeSelect(window.__empFundsEmployeesList);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(list) {
+          self.employeesLoaded = true;
+          window.__empFundsEmployeesList = list || [];
+          self.fillEmployeeSelect(list || []);
+        })
+        .withFailureHandler(function() { /* اختياري */ })
+        .getEmployeeFundsEmployees(AppLayout.getSession());
+    },
+
+    fillEmployeeSelect: function(list) {
+      var sel = document.getElementById('empFunds-employee');
+      if (!sel) return;
+      var cur = sel.value;
+      sel.innerHTML = '<option value="" data-i18n="select.chooseOption">' +
+        AppI18n.t('select.chooseOption') + '</option>';
+      (list || []).forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+      AppSelect.destroy('empFunds-employee');
+      AppSelect.enhance('empFunds-employee');
+    },
+
+    onEmployeeChange: function() {
+      var sel = document.getElementById('empFunds-employee');
+      this.currentEmployee = sel ? sel.value : '';
+      if (!this.currentEmployee) {
+        this.renderEmpty(AppI18n.t('empFunds.pickEmployee'));
+        AppUtils.hideMessage('empFundsMessage');
+        return;
+      }
+      this.loadOverview();
+    },
+
+    loadOverview: function() {
+      var sel = document.getElementById('empFunds-employee');
+      var employee = sel ? sel.value : '';
+      if (!employee) {
+        this.renderEmpty(AppI18n.t('empFunds.pickEmployee'));
+        return;
+      }
+      this.currentEmployee = employee;
+      var grid = document.getElementById('empFundsGrid');
+      if (grid) {
+        grid.innerHTML = '<div class="log-empty">' + AppI18n.t('log.loading') + '</div>';
+      }
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          res = res || {};
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res.success) {
+            AppUtils.showMessageKey('empFundsMessage', res.messageKey || 'form.err.server', 'danger');
+            self.renderEmpty(AppI18n.t('empFunds.empty'));
+            return;
+          }
+          AppUtils.hideMessage('empFundsMessage');
+          self.lastOverview = res;
+          self.renderOverview(res);
+        })
+        .withFailureHandler(function() {
+          AppUtils.showMessageKey('empFundsMessage', 'form.err.connection', 'danger');
+          self.lastOverview = null;
+          self.renderEmpty(AppI18n.t('form.err.connection'));
+        })
+        .getEmployeeFundsOverview(AppLayout.getSession(), employee);
+    },
+
+    formatAmount: function(amount) {
+      if (typeof AppUtils.formatNumber === 'function') return AppUtils.formatNumber(amount);
+      if (typeof AppUtils.formatSignedNumber === 'function') return AppUtils.formatSignedNumber(amount);
+      return String(amount);
+    },
+
+    renderCurrencyLines: function(balances) {
+      var esc = AppUtils.escapeHtml;
+      if (!balances || !balances.length) {
+        return '<div class="fund-empty">' + AppI18n.t('safe.empty') + '</div>';
+      }
+      return balances.map(function(c) {
+        var amount = Number(c.amount) || 0;
+        var neg = amount < 0 ? ' is-negative' : '';
+        var rawName = c.currency || c.code || '';
+        var label = typeof currencyLabel === 'function' ? currencyLabel(rawName) : rawName;
+        return '<div class="fund-borrower-line">' +
+          '<div class="fund-currency-amount' + neg + '">' + esc(EmployeeFunds.formatAmount(amount)) + '</div>' +
+          '<div class="fund-currency-code">' + esc(label) + '</div>' +
+          '</div>';
+      }).join('');
+    },
+
+    renderSubCells: function(items, emptyKey) {
+      var esc = AppUtils.escapeHtml;
+      if (!items || !items.length) {
+        return '<div class="fund-empty">' + AppI18n.t(emptyKey || 'safe.empty') + '</div>';
+      }
+      return items.map(function(item) {
+        var name = esc(item.name || '—');
+        var lines = EmployeeFunds.renderCurrencyLines(item.balances || []);
+        return '<div class="fund-borrower-cell">' +
+          '<div class="fund-borrower-name">' + name + '</div>' +
+          '<div class="fund-borrower-balances">' + lines + '</div>' +
+          '</div>';
+      }).join('');
+    },
+
+    renderFundCard: function(title, badge, bodyHtml, fullWidth) {
+      var cls = 'card fund-card' + (fullWidth ? ' emp-funds-card-wide' : '');
+      return '<div class="' + cls + '">' +
+        '<div class="fund-card-header">' +
+          '<span class="fund-card-title">' + AppUtils.escapeHtml(title) + '</span>' +
+          (badge ? '<span class="fund-card-badge">' + AppUtils.escapeHtml(badge) + '</span>' : '') +
+        '</div>' +
+        '<div class="fund-card-body">' + bodyHtml + '</div>' +
+        '</div>';
+    },
+
+    renderOverview: function(res) {
+      var grid = document.getElementById('empFundsGrid');
+      var summary = document.getElementById('empFundsSummary');
+      if (!grid) return;
+
+      var funds = res.funds || {};
+      var employee = res.employee || this.currentEmployee || '—';
+      if (summary) {
+        var bankCount = (funds.banks || []).length;
+        var borrowerCount = (funds.advances || []).length;
+        var parts = [
+          employee,
+          AppI18n.t('empFunds.summaryFunds') + ': 2',
+          AppI18n.t('empFunds.summaryBanks') + ': ' + bankCount,
+          AppI18n.t('empFunds.summaryBorrowers') + ': ' + borrowerCount
+        ];
+        if (res.generatedAt) parts.push(res.generatedAt);
+        summary.textContent = parts.join(' · ');
+      }
+
+      var html = '';
+      html += this.renderFundCard(
+        AppI18n.t('safe.vault'),
+        AppI18n.t('safe.fundBadge'),
+        '<div class="emp-funds-currencies">' + this.renderCurrencyLines(funds.vault) + '</div>'
+      );
+      html += this.renderFundCard(
+        AppI18n.t('safe.sham'),
+        AppI18n.t('safe.fundBadge'),
+        '<div class="emp-funds-currencies">' + this.renderCurrencyLines(funds.sham) + '</div>'
+      );
+
+      html += this.renderFundCard(
+        AppI18n.t('safe.banks'),
+        AppI18n.t('safe.banksBadge'),
+        '<div class="emp-funds-subcells">' + this.renderSubCells(funds.banks, 'safe.emptyBanks') + '</div>',
+        true
+      );
+
+      html += this.renderFundCard(
+        AppI18n.t('safe.advances'),
+        AppI18n.t('safe.advancesBadge'),
+        '<div class="emp-funds-subcells">' + this.renderSubCells(funds.advances, 'safe.emptyAdvances') + '</div>',
+        true
+      );
+
+      grid.innerHTML = html;
+      if (typeof AppI18n !== 'undefined') AppI18n.apply(grid);
+    },
+
+    renderEmpty: function(msg) {
+      this.lastOverview = null;
+      var grid = document.getElementById('empFundsGrid');
+      var summary = document.getElementById('empFundsSummary');
+      if (summary) summary.textContent = '';
+      if (grid) {
+        grid.innerHTML = '<div class="log-empty">' + AppUtils.escapeHtml(msg || AppI18n.t('empFunds.empty')) + '</div>';
+      }
+    }
+  };
+</script>

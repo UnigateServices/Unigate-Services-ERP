@@ -1,0 +1,477 @@
+<script>
+  /**
+   * إيصال تفاصيل العملية — عرض / طباعة / حفظ / واتساب (صورة أو PDF)
+   */
+  var pendingReceiptRow = null;
+
+  function openReceiptModal(rowJson) {
+    pendingReceiptRow = typeof rowJson === 'string' ? JSON.parse(rowJson) : rowJson;
+    closeAllReceiptMenus();
+    document.getElementById('receiptPaper').innerHTML = buildReceiptHtml(pendingReceiptRow);
+    AppUtils.hideMessage('receiptExportMsg');
+    document.getElementById('receiptModal').style.display = 'flex';
+    AppI18n.apply();
+  }
+
+  function closeReceiptModal() {
+    document.getElementById('receiptModal').style.display = 'none';
+    pendingReceiptRow = null;
+    closeAllReceiptMenus();
+  }
+
+  function toggleReceiptMenu(which) {
+    var menu = document.getElementById('receipt-menu-' + which);
+    var wasOpen = menu && menu.classList.contains('open');
+    closeAllReceiptMenus();
+    if (menu && !wasOpen) menu.classList.add('open');
+  }
+
+  function closeAllReceiptMenus() {
+    ['receipt-menu-wa', 'receipt-menu-save'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('open');
+    });
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest || !e.target.closest('.receipt-action-group')) {
+      closeAllReceiptMenus();
+    }
+  });
+
+  function receiptTypeTitle(typeName) {
+    if (typeName === 'وارد') return AppI18n.t('sidebar.income');
+    if (typeName === 'صادر') return AppI18n.t('sidebar.outcome');
+    if (typeName === 'تصريف') return AppI18n.t('sidebar.exchange');
+    if (typeName === 'تحويل') return AppI18n.t('sidebar.transfer');
+    if (typeName === 'سلفة') return AppI18n.t('sidebar.advances');
+    return typeName || '—';
+  }
+
+  function receiptStatusClass(status) {
+    if (status === 'مكتملة') return 'ok';
+    if (status === 'بانتظار الموافقة') return 'warn';
+    if (status === 'مرفوضة' || status === 'محذوفة' || status === 'محذوف') return 'bad';
+    return '';
+  }
+
+  function receiptStatusLabel(status) {
+    if (status === 'مكتملة') return AppI18n.t('status.completed');
+    if (status === 'بانتظار الموافقة') return AppI18n.t('status.pending');
+    if (status === 'محذوفة' || status === 'محذوف') return AppI18n.t('status.deleted');
+    if (status === 'مرفوضة') return AppI18n.t('status.rejected');
+    return status || '—';
+  }
+
+  function formatReceiptNum(v) {
+    if (v === null || v === undefined || v === '' || v === '-') return '—';
+    var n = Number(String(v).replace(/,/g, ''));
+    if (isNaN(n)) return String(v);
+    var neg = n < 0;
+    var abs = Math.abs(n);
+    var parts = abs.toFixed(2).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    var text = parts.join('.');
+    return neg ? '(' + text + ')' : text;
+  }
+
+  function receiptRow(label, value) {
+    if (value === null || value === undefined || value === '' || value === '-') return '';
+    return '<div class="receipt-row"><span class="k">' + AppUtils.escapeHtml(label) + '</span><span class="v">' + AppUtils.escapeHtml(String(value)) + '</span></div>';
+  }
+
+  function receiptRowHtml(label, html) {
+    if (!html) return '';
+    return '<div class="receipt-row"><span class="k">' + AppUtils.escapeHtml(label) + '</span><span class="v">' + html + '</span></div>';
+  }
+
+  function buildReceiptFields(row) {
+    var rows = '';
+    rows += receiptRow(AppI18n.t('log.col.trxDate'), row.trxDate || row.dateStr);
+    rows += receiptRow(AppI18n.t('log.col.sysDate'), row.sysDate);
+    rows += receiptRow(AppI18n.t('log.col.ref'), row.ref);
+
+    if (row.typeName === 'وارد' || row.typeName === 'صادر') {
+      rows += receiptRow(AppI18n.t('form.project'), displayProject(row.project));
+      rows += receiptRow(AppI18n.t('form.description'), row.description || row.notes);
+      rows += receiptRow(AppI18n.t('form.fund'), displayFund(row.fund));
+      if (row.fund === 'البنك') rows += receiptRow(AppI18n.t('form.bank'), row.bank);
+      rows += receiptRow(row.typeName === 'وارد' ? AppI18n.t('form.sender') : AppI18n.t('form.deliverer'), row.sender);
+      rows += receiptRow(AppI18n.t('form.receiver'), row.receiver);
+      rows += receiptRow(AppI18n.t('form.currency'), displayCurrency(row.currency));
+      rows += receiptRow(AppI18n.t('form.quantity'), formatReceiptNum(row.qty));
+      rows += receiptRow(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      if (row.notes && row.notes !== row.description) rows += receiptRow(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'تصريف') {
+      rows += receiptRow(AppI18n.t('form.fund'), displayFund(row.fund));
+      if (row.fund === 'البنك') rows += receiptRow(AppI18n.t('form.bank'), row.bank);
+      rows += receiptRow(AppI18n.t('form.exchangeType'), displayExType(row.exType));
+      rows += receiptRow(AppI18n.t('form.paidCurrency'), displayCurrency(row.paidCur));
+      rows += receiptRow(AppI18n.t('form.receivedCurrency'), displayCurrency(row.recCur));
+      rows += receiptRow(AppI18n.t('form.exchangeAmount'), formatReceiptNum(row.exAmt));
+      rows += receiptRow(AppI18n.t('form.exchangeRate'), formatReceiptNum(row.exRate));
+      rows += receiptRow(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'تحويل') {
+      var fromLbl = displayFund(row.fromFund);
+      if (row.fromFund === 'البنك' && row.fromBank && row.fromBank !== '-') fromLbl += ' · ' + row.fromBank;
+      var toLbl = displayFund(row.toFund);
+      if (row.toFund === 'البنك' && row.toBank && row.toBank !== '-') toLbl += ' · ' + row.toBank;
+      rows += receiptRow(AppI18n.t('form.fromFund'), fromLbl);
+      rows += receiptRow(AppI18n.t('form.toFund'), toLbl);
+      rows += receiptRow(AppI18n.t('form.currency'), displayCurrency(row.currency));
+      rows += receiptRow(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      rows += receiptRow(AppI18n.t('form.borrower'), displayBorrower(row.borrower));
+      rows += receiptRow(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'سلفة') {
+      rows += receiptRow(AppI18n.t('form.borrower'), displayBorrower(row.borrower));
+      rows += receiptRow(AppI18n.t('form.advType'), displayAdvType(row.advType));
+      if (row.advType === 'تصريف') {
+        rows += receiptRow(AppI18n.t('form.fromCurrency'), displayCurrency(row.fromCurrency));
+        rows += receiptRow(AppI18n.t('form.toCurrency'), displayCurrency(row.toCurrency));
+        rows += receiptRow(AppI18n.t('form.exchangeAmount'), formatReceiptNum(row.amount));
+        rows += receiptRow(AppI18n.t('form.exchangeRate'), formatReceiptNum(row.exRate));
+      } else {
+        rows += receiptRow(AppI18n.t('form.project'), displayProject(row.project));
+        rows += receiptRow(AppI18n.t('form.description'), row.description);
+        rows += receiptRow(AppI18n.t('form.receiver'), row.receiver);
+        rows += receiptRow(AppI18n.t('form.currency'), displayCurrency(row.currency));
+        rows += receiptRow(AppI18n.t('form.quantity'), formatReceiptNum(row.qty));
+        rows += receiptRow(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      }
+      rows += receiptRow(AppI18n.t('form.notes'), row.notes);
+    }
+
+    if (row.link && String(row.link).indexOf('http') === 0) {
+      rows += receiptRowHtml(
+        AppI18n.t('form.attachment'),
+        '<button type="button" class="log-attach-link" onclick="openAttachmentsViewer(decodeURIComponent(\'' +
+          encodeURIComponent(String(row.link)).replace(/'/g, '%27') + '\'))">' +
+          AppUtils.escapeHtml(AppI18n.t('log.viewAttachment')) + '</button>'
+      );
+    }
+    return rows;
+  }
+
+  function receiptTotalValue(row) {
+    var value;
+    if (row.typeName === 'تصريف' || row.typeName === 'وارد' || row.typeName === 'صادر') {
+      value = formatReceiptNum(row.total);
+    } else if (row.typeName === 'سلفة') {
+      value = formatReceiptNum(row.total || row.amount);
+    } else {
+      value = formatReceiptNum(row.amount || row.total);
+    }
+    if (value === '—') return value;
+    var cur = receiptTotalCurrency(row);
+    return cur ? (value + ' ' + cur) : value;
+  }
+
+  /** عملة الإجمالي: في التصريف هي عملة الوجهة (ما استُلم فعلاً) */
+  function receiptTotalCurrency(row) {
+    var cur = '';
+    if (row.typeName === 'تصريف') cur = row.recCur;
+    else if (row.typeName === 'سلفة' && row.advType === 'تصريف') cur = row.toCurrency;
+    else cur = row.currency;
+    if (!cur || cur === '-') return '';
+    return displayCurrency(cur);
+  }
+
+  function buildReceiptHtml(row) {
+    var dir = document.documentElement.dir || 'rtl';
+    var statusCls = receiptStatusClass(row.status);
+    var now = new Date();
+    var printedAt = now.toLocaleDateString(dir === 'rtl' ? 'ar-SY' : 'en-GB') + ' · ' +
+      now.toLocaleTimeString(dir === 'rtl' ? 'ar-SY' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    var markSvg = (typeof AppBrand !== 'undefined')
+      ? AppBrand.markSvg(44)
+      : '';
+    var poweredBy = (typeof AppBrand !== 'undefined' && AppBrand.poweredBy)
+      ? AppBrand.poweredBy
+      : 'Powered by UNI GATE';
+
+    return '' +
+      '<div class="receipt-brand">' +
+        '<div class="receipt-brand-mark">' + markSvg + '</div>' +
+        '<div class="receipt-brand-lines" style="direction:ltr;line-height:1.2;margin-bottom:2px;">' +
+          '<div style="font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#5a6b63;">Powered by</div>' +
+          '<h2 style="margin:2px 0 0;font-size:18px;letter-spacing:0.06em;">UNI GATE</h2>' +
+        '</div>' +
+        '<p data-i18n-skip="1">' + AppUtils.escapeHtml(AppI18n.t('receipt.subtitle')) + '</p>' +
+      '</div>' +
+      '<div class="receipt-meta">' +
+        '<span class="receipt-type-pill">' + AppUtils.escapeHtml(receiptTypeTitle(row.typeName)) + '</span>' +
+        '<span>' + AppUtils.escapeHtml(printedAt) + '</span>' +
+      '</div>' +
+      '<div class="receipt-op">' +
+        '<div class="label">' + AppUtils.escapeHtml(AppI18n.t('log.col.opNumber')) + '</div>' +
+        '<div class="value">' + AppUtils.escapeHtml(String(row.seq || '—')) + '</div>' +
+      '</div>' +
+      '<div class="receipt-rows">' + buildReceiptFields(row) + '</div>' +
+      '<div class="receipt-total">' +
+        '<span class="k">' + AppUtils.escapeHtml(AppI18n.t('form.total')) + '</span>' +
+        '<span class="v">' + AppUtils.escapeHtml(receiptTotalValue(row)) + '</span>' +
+      '</div>' +
+      '<div class="receipt-footer">' +
+        '<div>' + AppUtils.escapeHtml(AppI18n.t('receipt.thanks')) + '</div>' +
+        '<div class="receipt-powered">' + AppUtils.escapeHtml(poweredBy) + '</div>' +
+        '<span class="receipt-status ' + statusCls + '">' + AppUtils.escapeHtml(receiptStatusLabel(row.status)) + '</span>' +
+      '</div>';
+  }
+
+  function receiptTextLine(label, value) {
+    if (value === null || value === undefined || value === '' || value === '-') return '';
+    return label + ': ' + String(value);
+  }
+
+  function buildReceiptTextFields(row) {
+    var lines = [];
+    function push(label, value) {
+      var line = receiptTextLine(label, value);
+      if (line) lines.push(line);
+    }
+    push(AppI18n.t('log.col.trxDate'), row.trxDate || row.dateStr);
+    push(AppI18n.t('log.col.sysDate'), row.sysDate);
+    push(AppI18n.t('log.col.ref'), row.ref);
+
+    if (row.typeName === 'وارد' || row.typeName === 'صادر') {
+      push(AppI18n.t('form.project'), displayProject(row.project));
+      push(AppI18n.t('form.description'), row.description || row.notes);
+      push(AppI18n.t('form.fund'), displayFund(row.fund));
+      if (row.fund === 'البنك') push(AppI18n.t('form.bank'), row.bank);
+      push(row.typeName === 'وارد' ? AppI18n.t('form.sender') : AppI18n.t('form.deliverer'), row.sender);
+      push(AppI18n.t('form.receiver'), row.receiver);
+      push(AppI18n.t('form.currency'), displayCurrency(row.currency));
+      push(AppI18n.t('form.quantity'), formatReceiptNum(row.qty));
+      push(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      if (row.notes && row.notes !== row.description) push(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'تصريف') {
+      push(AppI18n.t('form.fund'), displayFund(row.fund));
+      if (row.fund === 'البنك') push(AppI18n.t('form.bank'), row.bank);
+      push(AppI18n.t('form.exchangeType'), displayExType(row.exType));
+      push(AppI18n.t('form.paidCurrency'), displayCurrency(row.paidCur));
+      push(AppI18n.t('form.receivedCurrency'), displayCurrency(row.recCur));
+      push(AppI18n.t('form.exchangeAmount'), formatReceiptNum(row.exAmt));
+      push(AppI18n.t('form.exchangeRate'), formatReceiptNum(row.exRate));
+      push(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'تحويل') {
+      var fromT = displayFund(row.fromFund);
+      if (row.fromFund === 'البنك' && row.fromBank && row.fromBank !== '-') fromT += ' · ' + row.fromBank;
+      var toT = displayFund(row.toFund);
+      if (row.toFund === 'البنك' && row.toBank && row.toBank !== '-') toT += ' · ' + row.toBank;
+      push(AppI18n.t('form.fromFund'), fromT);
+      push(AppI18n.t('form.toFund'), toT);
+      push(AppI18n.t('form.currency'), displayCurrency(row.currency));
+      push(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      push(AppI18n.t('form.borrower'), displayBorrower(row.borrower));
+      push(AppI18n.t('form.notes'), row.notes);
+    } else if (row.typeName === 'سلفة') {
+      push(AppI18n.t('form.borrower'), displayBorrower(row.borrower));
+      push(AppI18n.t('form.advType'), displayAdvType(row.advType));
+      if (row.advType === 'تصريف') {
+        push(AppI18n.t('form.fromCurrency'), displayCurrency(row.fromCurrency));
+        push(AppI18n.t('form.toCurrency'), displayCurrency(row.toCurrency));
+        push(AppI18n.t('form.exchangeAmount'), formatReceiptNum(row.amount));
+        push(AppI18n.t('form.exchangeRate'), formatReceiptNum(row.exRate));
+      } else {
+        push(AppI18n.t('form.project'), displayProject(row.project));
+        push(AppI18n.t('form.description'), row.description);
+        push(AppI18n.t('form.receiver'), row.receiver);
+        push(AppI18n.t('form.currency'), displayCurrency(row.currency));
+        push(AppI18n.t('form.quantity'), formatReceiptNum(row.qty));
+        push(AppI18n.t('form.amount'), formatReceiptNum(row.amount));
+      }
+      push(AppI18n.t('form.notes'), row.notes);
+    }
+    return lines;
+  }
+
+  function receiptFileBase(row) {
+    var seq = String(row.seq || 'op').replace(/[^\w\-]+/g, '_');
+    var type = String(row.typeName || 'trx');
+    return 'receipt_' + type + '_' + seq;
+  }
+
+  function receiptTextSummary(row) {
+    var lines = [
+      ((typeof AppBrand !== 'undefined') ? AppBrand.poweredBy : 'Powered by UNI GATE') + ' — ' + receiptTypeTitle(row.typeName),
+      AppI18n.t('log.col.opNumber') + ': ' + (row.seq || '—')
+    ];
+    lines = lines.concat(buildReceiptTextFields(row));
+    lines.push(AppI18n.t('form.total') + ': ' + receiptTotalValue(row));
+    lines.push(AppI18n.t('log.col.status') + ': ' + receiptStatusLabel(row.status));
+    return lines.join('\n');
+  }
+
+  function ensureExportLibs() {
+    if (typeof html2canvas !== 'function') {
+      throw new Error(AppI18n.t('receipt.err.libs'));
+    }
+    var jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPDF) throw new Error(AppI18n.t('receipt.err.libs'));
+    return jsPDF;
+  }
+
+  function captureReceiptCanvas(callback, onError) {
+    var paper = document.getElementById('receiptPaper');
+    if (!paper) {
+      if (onError) onError();
+      return;
+    }
+    var scroll = document.getElementById('receiptPrintRoot');
+    var prevMax = '';
+    var prevOverflow = '';
+    if (scroll) {
+      prevMax = scroll.style.maxHeight;
+      prevOverflow = scroll.style.overflow;
+      scroll.style.maxHeight = 'none';
+      scroll.style.overflow = 'visible';
+    }
+    var restore = function() {
+      if (!scroll) return;
+      scroll.style.maxHeight = prevMax;
+      scroll.style.overflow = prevOverflow;
+    };
+    if (typeof html2canvas !== 'function') {
+      restore();
+      if (onError) onError();
+      return;
+    }
+    html2canvas(paper, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+      height: paper.scrollHeight,
+      windowHeight: paper.scrollHeight
+    }).then(function(canvas) {
+      restore();
+      callback(canvas);
+    }).catch(function() {
+      restore();
+      if (onError) onError();
+    });
+  }
+
+  function canvasToPdf(jsPDF, canvas, filename) {
+    var img = canvas.toDataURL('image/jpeg', 0.95);
+    var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    var pageW = pdf.internal.pageSize.getWidth();
+    var pageH = pdf.internal.pageSize.getHeight();
+    var margin = 12;
+    var maxW = pageW - margin * 2;
+    var maxH = pageH - margin * 2;
+    var imgW = maxW;
+    var imgH = (canvas.height * imgW) / canvas.width;
+    if (imgH > maxH) {
+      imgH = maxH;
+      imgW = (canvas.width * imgH) / canvas.height;
+    }
+    var x = (pageW - imgW) / 2;
+    pdf.addImage(img, 'JPEG', x, margin, imgW, imgH);
+    pdf.save(filename);
+  }
+
+  function downloadCanvasPng(canvas, filename) {
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function saveReceipt(format) {
+    closeAllReceiptMenus();
+    if (!pendingReceiptRow) return;
+    AppUtils.showMessageKey('receiptExportMsg', 'receipt.working', 'info');
+    try {
+      var jsPDF = ensureExportLibs();
+      captureReceiptCanvas(function(canvas) {
+        var base = receiptFileBase(pendingReceiptRow);
+        if (format === 'pdf') canvasToPdf(jsPDF, canvas, base + '.pdf');
+        else downloadCanvasPng(canvas, base + '.png');
+        AppUtils.showMessageKey('receiptExportMsg', 'receipt.saved', 'success');
+      }, function() {
+        AppUtils.showMessageKey('receiptExportMsg', 'receipt.err.export', 'danger');
+      });
+    } catch (e) {
+      AppUtils.showMessageKey('receiptExportMsg', 'receipt.err.libs', 'danger');
+    }
+  }
+
+  function printReceipt() {
+    closeAllReceiptMenus();
+    if (!pendingReceiptRow) return;
+    var prevTitle = document.title;
+    var typeLabel = receiptTypeTitle(pendingReceiptRow.typeName);
+    var seq = pendingReceiptRow.seq || '—';
+    var ref = pendingReceiptRow.ref || '';
+    document.title = AppI18n.t('receipt.printDocTitle')
+      .replace('{type}', typeLabel)
+      .replace('{seq}', String(seq))
+      .replace('{ref}', ref ? (' · ' + ref) : '');
+
+    document.body.classList.add('printing-receipt');
+    var scroll = document.getElementById('receiptPrintRoot');
+    var prevMax = '';
+    var prevOverflow = '';
+    if (scroll) {
+      prevMax = scroll.style.maxHeight;
+      prevOverflow = scroll.style.overflow;
+      scroll.style.maxHeight = 'none';
+      scroll.style.overflow = 'visible';
+    }
+    var restore = function() {
+      document.body.classList.remove('printing-receipt');
+      document.title = prevTitle;
+      if (scroll) {
+        scroll.style.maxHeight = prevMax;
+        scroll.style.overflow = prevOverflow;
+      }
+    };
+    var onAfter = function() {
+      window.removeEventListener('afterprint', onAfter);
+      restore();
+    };
+    window.addEventListener('afterprint', onAfter);
+    setTimeout(function() {
+      window.print();
+      // احتياط إن لم يُطلق afterprint (بعض بيئات iframe)
+      setTimeout(function() {
+        window.removeEventListener('afterprint', onAfter);
+        if (document.body.classList.contains('printing-receipt')) restore();
+      }, 800);
+    }, 50);
+    AppUtils.showMessageKey('receiptExportMsg', 'receipt.printHint', 'info');
+  }
+
+  function shareReceiptWhatsApp() {
+    closeAllReceiptMenus();
+    if (!pendingReceiptRow) return;
+    // نص كامل فقط — بدون تنزيل صورة (التحميل من زر حفظ منفصل)
+    openWhatsAppShare(receiptTextSummary(pendingReceiptRow));
+    AppUtils.showMessageKey('receiptExportMsg', 'receipt.waTextOnly', 'success');
+  }
+
+  /**
+   * يفتح واتساب ويب/التطبيق مباشرة بنص الإيصال
+   */
+  function openWhatsAppShare(text) {
+    var encoded = encodeURIComponent(text || '');
+    var url = 'https://api.whatsapp.com/send?text=' + encoded;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  function openWhatsAppText(text) {
+    openWhatsAppShare(text);
+  }
+
+  if (typeof AppI18n !== 'undefined' && AppI18n.onChange) {
+    AppI18n.onChange(function() {
+      if (pendingReceiptRow && document.getElementById('receiptModal').style.display === 'flex') {
+        document.getElementById('receiptPaper').innerHTML = buildReceiptHtml(pendingReceiptRow);
+      }
+    });
+  }
+</script>

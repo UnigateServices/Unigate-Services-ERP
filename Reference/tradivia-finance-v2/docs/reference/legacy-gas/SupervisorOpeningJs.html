@@ -1,0 +1,360 @@
+<script>
+  /**
+   * الرصيد الافتتاحي + سجلّه (مشرف فقط)
+   */
+  var OpeningBalance = {
+    ready: false,
+    employeesLoaded: false,
+    selectsReady: false,
+
+    ensureReady: function() {
+      if (typeof APP_INTERFACE !== 'undefined' && APP_INTERFACE !== 'supervisor') return;
+      this.bindOnce();
+      var panel = document.querySelector('.content-panel[data-section="opening-balance"]');
+      if (panel) AppI18n.apply(panel);
+      var self = this;
+      setTimeout(function() {
+        self.ensureSelects();
+        self.loadEmployees();
+      }, 0);
+    },
+
+    bindOnce: function() {
+      if (this.ready) return;
+      this.ready = true;
+      var self = this;
+      var btn = document.getElementById('btnOpeningSave');
+      if (btn) btn.addEventListener('click', function() { self.save(); });
+      var dateEl = document.getElementById('opening-trxDate');
+      if (dateEl && !dateEl.value) dateEl.value = AppUtils.todayInputValue();
+      var amountHost = document.getElementById('opening-amount');
+      if (amountHost && typeof AppUtils.bindAmountInputs === 'function') {
+        AppUtils.bindAmountInputs(amountHost.parentNode || document);
+      }
+    },
+
+    ensureSelects: function() {
+      if (this.selectsReady) return;
+      this.selectsReady = true;
+      ['opening-employee', 'opening-fund', 'opening-currency'].forEach(function(id) {
+        if (!document.getElementById(id)) return;
+        AppSelect.destroy(id);
+        AppSelect.enhance(id);
+      });
+    },
+
+    loadEmployees: function() {
+      var self = this;
+      if (this.employeesLoaded) return;
+      google.script.run
+        .withSuccessHandler(function(list) {
+          self.employeesLoaded = true;
+          window.__openingEmployeesList = list || [];
+          var sel = document.getElementById('opening-employee');
+          if (!sel) return;
+          var currentUser = sessionStorage.getItem('currentUser') || '';
+          sel.innerHTML = '';
+          (list || []).forEach(function(name) {
+            var opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            if (name === currentUser) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          if (!sel.value && currentUser) {
+            var optSelf = document.createElement('option');
+            optSelf.value = currentUser;
+            optSelf.textContent = currentUser;
+            optSelf.selected = true;
+            sel.appendChild(optSelf);
+          }
+          AppSelect.destroy('opening-employee');
+          AppSelect.enhance('opening-employee');
+        })
+        .withFailureHandler(function() { /* اختياري */ })
+        .getOpeningBalanceEmployees(AppLayout.getSession());
+    },
+
+    collect: function() {
+      function val(id) {
+        var el = document.getElementById(id);
+        return el ? el.value : '';
+      }
+      return {
+        employee: val('opening-employee'),
+        fund: val('opening-fund'),
+        currency: val('opening-currency'),
+        amount: AppUtils.parseFormattedNumber(val('opening-amount')),
+        trxDate: val('opening-trxDate'),
+        notes: val('opening-notes')
+      };
+    },
+
+    save: function() {
+      var data = this.collect();
+      var msgId = 'openingMessage';
+      if (!data.employee || !data.fund || !data.currency || data.amount === '' || data.amount === null) {
+        AppUtils.showMessageKey(msgId, 'opening.err.required', 'danger');
+        return;
+      }
+      AppUtils.setLoadingState('btnOpeningSave', true, AppI18n.t('form.savingServer'));
+      AppUtils.hideMessage(msgId);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          AppUtils.setLoadingState('btnOpeningSave', false, '', AppI18n.t('opening.save'));
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res || !res.success) {
+            AppUtils.showMessageKey(msgId, (res && res.messageKey) || 'form.err.server', 'danger');
+            return;
+          }
+          AppUtils.showMessageKey(msgId, res.messageKey || 'opening.saved', 'success');
+          var amountEl = document.getElementById('opening-amount');
+          var notesEl = document.getElementById('opening-notes');
+          if (amountEl) amountEl.value = '';
+          if (notesEl) notesEl.value = '';
+          if (typeof updateSafeBalances === 'function') updateSafeBalances();
+          if (typeof OpeningLog !== 'undefined') OpeningLog.reload();
+        })
+        .withFailureHandler(function() {
+          AppUtils.setLoadingState('btnOpeningSave', false, '', AppI18n.t('opening.save'));
+          AppUtils.showMessageKey(msgId, 'form.err.connection', 'danger');
+        })
+        .saveOpeningBalance(AppLayout.getSession(), data);
+    }
+  };
+
+  /** سجل الرصيد الافتتاحي — نفس أسلوب بقية السجلات */
+  var OpeningLog = {
+    ready: false,
+    cache: [],
+    advanced: false,
+
+    ensureReady: function() {
+      if (typeof APP_INTERFACE !== 'undefined' && APP_INTERFACE !== 'supervisor') return;
+      this.bindOnce();
+      var panel = document.querySelector('.content-panel[data-section="log-opening"]');
+      if (panel) AppI18n.apply(panel);
+      this.load();
+    },
+
+    bindOnce: function() {
+      if (this.ready) return;
+      this.ready = true;
+    },
+
+    reload: function() {
+      this.advanced = false;
+      var reset = document.getElementById('reset-opening');
+      if (reset) reset.classList.add('hidden');
+      this.load();
+    },
+
+    load: function(filters) {
+      var tbody = document.getElementById('tbody-opening');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="9" class="log-empty">' + AppI18n.t('log.loading') + '</td></tr>';
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          res = res || {};
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res.success) {
+            tbody.innerHTML = '<tr><td colspan="9" class="log-empty-warn">' +
+              AppI18n.t(res.messageKey || 'auth.forbidden') + '</td></tr>';
+            self.updateCount(0);
+            return;
+          }
+          self.cache = res.rows || [];
+          self.render(self.cache);
+          var q = document.getElementById('search-opening');
+          if (q && q.value) self.applyQuickFilter();
+        })
+        .withFailureHandler(function() {
+          tbody.innerHTML = '<tr><td colspan="9" class="log-empty-warn" data-i18n="form.err.connection">' +
+            AppI18n.t('form.err.connection') + '</td></tr>';
+          self.updateCount(0);
+        })
+        .getOpeningBalanceLog(AppLayout.getSession(), filters || {});
+    },
+
+    render: function(rows) {
+      var tbody = document.getElementById('tbody-opening');
+      if (!tbody) return;
+      var esc = AppUtils.escapeHtml;
+      var num = function(v) { return AppUtils.formatSignedNumberHtml(v); };
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="log-empty">' + AppI18n.t('log.noRecords') + '</td></tr>';
+        this.updateCount(0);
+        return;
+      }
+      var html = '';
+      rows.forEach(function(row) {
+        html += '<tr data-search="' + esc(String(row.seq) + ' ' + row.employee + ' ' + row.fund + ' ' +
+          row.currency + ' ' + row.amount + ' ' + row.notes + ' ' + row.ref).toLowerCase() + '">' +
+          '<td><b>' + esc(row.seq) + '</b></td>' +
+          '<td>' + esc(row.trxDate) + '</td>' +
+          '<td>' + esc(row.sysDate) + '</td>' +
+          '<td>' + esc(row.employee) + '</td>' +
+          '<td>' + esc(typeof displayFund === 'function' ? displayFund(row.fund) : row.fund) + '</td>' +
+          '<td>' + esc(typeof currencyLabel === 'function' ? currencyLabel(row.currency) : row.currency) + '</td>' +
+          '<td><b>' + num(row.amount) + '</b></td>' +
+          '<td>' + esc(row.notes) + '</td>' +
+          '<td>' + esc(row.ref) + '</td></tr>';
+      });
+      tbody.innerHTML = html;
+      this.updateCount(rows.length);
+    },
+
+    updateCount: function(count) {
+      var countEl = document.getElementById('count-opening');
+      if (!countEl) return;
+      countEl.textContent = AppI18n.t('log.resultsCount').replace('{n}', String(count == null ? 0 : count));
+    },
+
+    applyQuickFilter: function() {
+      var q = ((document.getElementById('search-opening') || {}).value || '').trim().toLowerCase();
+      var clearBtn = document.getElementById('search-opening-clear');
+      if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+      var tbody = document.getElementById('tbody-opening');
+      if (!tbody) return;
+      var visible = 0;
+      tbody.querySelectorAll('tr').forEach(function(tr) {
+        if (tr.querySelector('.log-empty, .log-empty-warn')) return;
+        var hay = tr.getAttribute('data-search') || '';
+        var show = !q || hay.indexOf(q) !== -1;
+        tr.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+      this.updateCount(visible);
+    }
+  };
+
+  function onOpeningQuickSearch() { OpeningLog.applyQuickFilter(); }
+  function clearOpeningQuickSearch() {
+    var el = document.getElementById('search-opening');
+    if (el) el.value = '';
+    OpeningLog.applyQuickFilter();
+  }
+  function resetOpeningFilter() {
+    OpeningLog.advanced = false;
+    var reset = document.getElementById('reset-opening');
+    if (reset) reset.classList.add('hidden');
+    clearOpeningQuickSearch();
+    OpeningLog.load();
+  }
+  function openOpeningAdvancedSearch() {
+    var modal = document.getElementById('openingAdvancedModal');
+    if (!modal) return;
+    var fromEl = document.getElementById('opening-adv-from');
+    var toEl = document.getElementById('opening-adv-to');
+    if (fromEl && !fromEl.value) {
+      var d = new Date();
+      d.setDate(d.getDate() - 30);
+      var m = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+      var day = (d.getDate() < 10 ? '0' : '') + d.getDate();
+      fromEl.value = d.getFullYear() + '-' + m + '-' + day;
+    }
+    if (toEl && !toEl.value && typeof AppUtils !== 'undefined') toEl.value = AppUtils.todayInputValue();
+
+    // افتح فوراً — لا تنتظر السيرفر
+    modal.style.display = 'flex';
+    AppI18n.apply(modal);
+    enhanceOpeningAdvSelects_();
+
+    // عبّئ الموظفين من الكاش أو بطلب خلفي خفيف
+    populateOpeningAdvEmployees_(function() {
+      enhanceOpeningAdvSelects_();
+      AppI18n.apply(modal);
+    });
+  }
+
+  function enhanceOpeningAdvSelects_() {
+    ['opening-adv-employee', 'opening-adv-fund', 'opening-adv-currency'].forEach(function(id) {
+      if (!document.getElementById(id)) return;
+      AppSelect.destroy(id);
+      AppSelect.enhance(id);
+    });
+  }
+
+  function populateOpeningAdvEmployees_(done) {
+    var sel = document.getElementById('opening-adv-employee');
+    if (!sel) { if (done) done(); return; }
+
+    function fill(list) {
+      var prev = [];
+      if (sel.multiple) {
+        prev = Array.from(sel.selectedOptions).map(function(o) { return o.value; }).filter(Boolean);
+      } else if (sel.value) {
+        prev = [sel.value];
+      }
+      sel.innerHTML = '';
+      var allOpt = document.createElement('option');
+      allOpt.value = '';
+      allOpt.setAttribute('data-i18n', 'select.all');
+      allOpt.textContent = (typeof AppI18n !== 'undefined') ? AppI18n.t('select.all') : 'الكل';
+      sel.appendChild(allOpt);
+      (list || []).forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        if (prev.indexOf(name) !== -1) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      if (done) done();
+    }
+
+    if (window.__openingEmployeesList && window.__openingEmployeesList.length) {
+      fill(window.__openingEmployeesList);
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(list) {
+        window.__openingEmployeesList = list || [];
+        fill(window.__openingEmployeesList);
+      })
+      .withFailureHandler(function() { if (done) done(); })
+      .getOpeningBalanceEmployees(AppLayout.getSession());
+  }
+
+  function valOpeningMulti_(id) {
+    var el = document.getElementById(id);
+    if (!el) return '';
+    if (el.multiple) {
+      return Array.from(el.selectedOptions).map(function(o) { return o.value; })
+        .filter(function(v) { return !!v; }).join('|');
+    }
+    return el.value || '';
+  }
+
+  function closeOpeningAdvancedSearch() {
+    var modal = document.getElementById('openingAdvancedModal');
+    if (modal) modal.style.display = 'none';
+  }
+  function applyOpeningAdvancedSearch() {
+    OpeningLog.advanced = true;
+    var reset = document.getElementById('reset-opening');
+    if (reset) reset.classList.remove('hidden');
+    OpeningLog.load({
+      trxDateFrom: (document.getElementById('opening-adv-from') || {}).value || '',
+      trxDateTo: (document.getElementById('opening-adv-to') || {}).value || '',
+      sysDateFrom: (document.getElementById('opening-adv-sysFrom') || {}).value || '',
+      sysDateTo: (document.getElementById('opening-adv-sysTo') || {}).value || '',
+      fund: valOpeningMulti_('opening-adv-fund'),
+      currency: valOpeningMulti_('opening-adv-currency'),
+      employee: valOpeningMulti_('opening-adv-employee')
+    });
+    closeOpeningAdvancedSearch();
+  }
+
+  if (typeof AppI18n !== 'undefined' && AppI18n.onChange) {
+    AppI18n.onChange(function() {
+      var panel = document.querySelector('.content-panel[data-section="opening-balance"]');
+      if (panel) AppI18n.apply(panel);
+      var logPanel = document.querySelector('.content-panel[data-section="log-opening"]');
+      if (logPanel) AppI18n.apply(logPanel);
+      if (typeof OpeningLog !== 'undefined' && OpeningLog.cache) {
+        OpeningLog.render(OpeningLog.cache);
+      }
+    });
+  }
+</script>

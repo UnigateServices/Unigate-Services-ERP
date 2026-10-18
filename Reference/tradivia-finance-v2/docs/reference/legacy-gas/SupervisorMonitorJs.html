@@ -1,0 +1,380 @@
+<script>
+  /**
+   * مراقبة عمليات الموظفين — مشرف فقط، عرض بدون تعديل/حذف
+   */
+  var MonitorOps = {
+    currentType: 'tbody-incomes',
+    cache: [],
+    employeesLoaded: false,
+    initialized: false,
+
+    TYPE_TABS: [
+      { id: 'tbody-incomes', type: 'IN', i18n: 'sidebar.income' },
+      { id: 'tbody-outcomes', type: 'OUT', i18n: 'sidebar.outcome' },
+      { id: 'tbody-exchanges', type: 'EX', i18n: 'sidebar.exchange' },
+      { id: 'tbody-transfers', type: 'TR', i18n: 'sidebar.transfer' },
+      { id: 'tbody-advances', type: 'AD', i18n: 'sidebar.advances' }
+    ],
+
+    init: function() {
+      if (this.initialized) return;
+      // واجهة المشرف أو دور مشرف
+      var onShell = (typeof APP_INTERFACE !== 'undefined' && APP_INTERFACE === 'supervisor');
+      if (!onShell && !AppLayout.isSupervisor()) return;
+      this.initialized = true;
+      this.bindTabs();
+      this.setDefaultDates();
+      this.renderThead();
+      // فعّل القائمة فوراً بخيار «الكل» — لا تنتظر السيرفر (يمنع الشكل القبيح)
+      if (typeof AppSelect !== 'undefined') {
+        AppSelect.enhance('monitor-employee');
+      }
+      var self = this;
+      setTimeout(function() { self.loadEmployees(); }, 0);
+    },
+
+    bindTabs: function() {
+      var self = this;
+      document.querySelectorAll('.monitor-type-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          self.currentType = btn.getAttribute('data-table') || 'tbody-incomes';
+          document.querySelectorAll('.monitor-type-tab').forEach(function(b) {
+            b.classList.toggle('active', b === btn);
+          });
+          self.renderThead();
+          self.runSearch();
+        });
+      });
+    },
+
+    setDefaultDates: function() {
+      var fromEl = document.getElementById('monitor-sysFrom');
+      var toEl = document.getElementById('monitor-sysTo');
+      if (!fromEl || !toEl) return;
+      var today = AppUtils.todayInputValue();
+      var d = new Date();
+      d.setDate(d.getDate() - 7);
+      var m = (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1);
+      var day = (d.getDate() < 10 ? '0' : '') + d.getDate();
+      var weekAgo = d.getFullYear() + '-' + m + '-' + day;
+      if (!fromEl.value) fromEl.value = weekAgo;
+      if (!toEl.value) toEl.value = today;
+    },
+
+    loadEmployees: function() {
+      var self = this;
+      if (this.employeesLoaded) return;
+      google.script.run
+        .withSuccessHandler(function(list) {
+          self.employeesLoaded = true;
+          var sel = document.getElementById('monitor-employee');
+          if (!sel) return;
+          var selected = [];
+          if (sel.multiple) {
+            selected = Array.from(sel.selectedOptions).map(function(o) { return o.value; });
+          } else if (sel.value) {
+            selected = [sel.value];
+          }
+          sel.innerHTML = '<option value="" data-i18n="select.all">' +
+            ((typeof AppI18n !== 'undefined') ? AppI18n.t('select.all') : 'الكل') + '</option>';
+          (list || []).forEach(function(name) {
+            var opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            if (selected.indexOf(name) !== -1) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          if (!selected.length || (selected.length === 1 && !selected[0])) {
+            sel.value = '';
+          }
+          AppSelect.refresh('monitor-employee');
+          var panel = document.querySelector('.content-panel[data-section="monitor-ops"]');
+          if (panel) AppI18n.apply(panel);
+        })
+        .withFailureHandler(function() {
+          if (typeof AppSelect !== 'undefined') AppSelect.enhance('monitor-employee');
+        })
+        .getOpeningBalanceEmployees(AppLayout.getSession());
+    },
+
+    ensureReady: function() {
+      this.init();
+      // لا نُشغّل البحث تلقائياً عند فتح القسم — المستخدم يضغط «عرض» (أخف وأسرع)
+      var tbody = document.getElementById('tbody-monitor');
+      if (tbody && !tbody.dataset.loaded) {
+        tbody.innerHTML = '<tr><td colspan="' + this.colSpan() + '" class="log-empty">' +
+          AppI18n.t('monitor.ready') + '</td></tr>';
+      }
+    },
+
+    collectFilters: function() {
+      var empEl = document.getElementById('monitor-employee');
+      var emp = '';
+      if (empEl) {
+        if (empEl.multiple) {
+          emp = Array.from(empEl.selectedOptions).map(function(o) { return o.value; })
+            .filter(function(v) { return !!v; }).join('|');
+        } else {
+          emp = empEl.value || '';
+        }
+      }
+      return {
+        tableType: this.currentType,
+        employee: emp,
+        sysDateFrom: (document.getElementById('monitor-sysFrom') || {}).value || '',
+        sysDateTo: (document.getElementById('monitor-sysTo') || {}).value || ''
+      };
+    },
+
+    runSearch: function() {
+      var self = this;
+      var tbody = document.getElementById('tbody-monitor');
+      if (!tbody) return;
+      var cols = this.colSpan();
+      tbody.innerHTML = '<tr><td colspan="' + cols + '" class="log-empty">' + AppI18n.t('log.searching') + '</td></tr>';
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          res = res || {};
+          if (AppLayout.handleAuthResult(res)) return;
+          if (!res.success) {
+            tbody.innerHTML = '<tr><td colspan="' + cols + '" class="log-empty-warn">' +
+              AppI18n.t(res.messageKey || 'auth.forbidden') + '</td></tr>';
+            self.updateCount(0);
+            return;
+          }
+          self.cache = res.rows || [];
+          tbody.dataset.loaded = '1';
+          self.renderRows(self.cache);
+          var q = document.getElementById('monitor-quick-search');
+          if (q && q.value) self.applyQuickFilter();
+        })
+        .withFailureHandler(function() {
+          tbody.innerHTML = '<tr><td colspan="' + cols + '" class="log-empty-warn" data-i18n="form.err.connection">' +
+            AppI18n.t('form.err.connection') + '</td></tr>';
+          self.updateCount(0);
+        })
+        .getMonitorTransactions(AppLayout.getSession(), self.collectFilters());
+    },
+
+    typeCode: function() {
+      var tab = this.TYPE_TABS.filter(function(t) { return t.id === MonitorOps.currentType; })[0];
+      return tab ? tab.type : 'IN';
+    },
+
+    colSpan: function() {
+      var t = this.typeCode();
+      if (t === 'EX') return 15;
+      if (t === 'AD') return 16;
+      if (t === 'TR') return 13;
+      return 16;
+    },
+
+    renderThead: function() {
+      var thead = document.getElementById('monitor-thead');
+      if (!thead) return;
+      var t = this.typeCode();
+      var h = function(key, fallback) {
+        return '<th data-i18n="' + key + '">' + fallback + '</th>';
+      };
+      var html = '<tr>';
+      html += h('log.col.opNumber', 'رقم العملية');
+      html += h('log.col.employee', 'الموظف');
+      html += h('log.col.trxDate', 'تاريخ العملية');
+      html += h('log.col.sysDate', 'تاريخ الإدخال');
+
+      if (t === 'IN' || t === 'OUT') {
+        html += h('log.col.project', 'المشروع');
+        html += h('log.col.description', 'الوصف');
+        html += h('log.col.fund', 'الصندوق');
+        html += h(t === 'IN' ? 'form.sender' : 'form.deliverer', t === 'IN' ? 'مصدر النقد' : 'المسلّم');
+        html += h('form.receiver', 'المستلم');
+        html += h('log.col.currency', 'العملة');
+        html += h('form.quantity', 'الكمية');
+        html += h('log.col.amount', 'المبلغ');
+        html += h('form.total', 'الإجمالي');
+      } else if (t === 'EX') {
+        html += h('log.col.fund', 'الصندوق');
+        html += h('form.exchangeType', 'نوع التصريف');
+        html += h('form.paidCurrency', 'المدفوعة');
+        html += h('form.receivedCurrency', 'المستلمة');
+        html += h('form.exchangeAmount', 'المبلغ');
+        html += h('form.exchangeRate', 'سعر الصرف');
+        html += h('form.total', 'الإجمالي');
+        html += h('log.col.notes', 'ملاحظات');
+      } else if (t === 'TR') {
+        html += h('form.fromFund', 'من صندوق');
+        html += h('form.toFund', 'إلى صندوق');
+        html += h('log.col.currency', 'العملة');
+        html += h('log.col.amount', 'المبلغ');
+        html += h('log.col.borrower', 'المستلف');
+        html += h('log.col.notes', 'ملاحظات');
+      } else {
+        html += h('log.col.borrower', 'المستلف');
+        html += h('log.col.type', 'النوع');
+        html += h('log.col.project', 'المشروع');
+        html += h('log.col.currency', 'العملة');
+        html += h('form.quantity', 'الكمية');
+        html += h('log.col.amount', 'المبلغ');
+        html += h('form.exchangeRate', 'سعر الصرف');
+        html += h('form.total', 'الإجمالي');
+        html += h('log.col.notes', 'ملاحظات');
+      }
+
+      html += h('log.col.attach', 'مرفق');
+      html += h('log.col.status', 'الحالة');
+      html += h('log.col.action', 'إجراء');
+      html += '</tr>';
+      thead.innerHTML = html;
+      var panel = document.querySelector('.content-panel[data-section="monitor-ops"]');
+      if (panel) AppI18n.apply(panel);
+    },
+
+    renderRows: function(rows) {
+      var tbody = document.getElementById('tbody-monitor');
+      if (!tbody) return;
+      var cols = this.colSpan();
+      var t = this.typeCode();
+      var esc = AppUtils.escapeHtml;
+      var num = function(v) { return AppUtils.formatSignedNumberHtml(v); };
+
+      tbody.innerHTML = '';
+      if (!rows || !rows.length) {
+        tbody.innerHTML = '<tr><td colspan="' + cols + '" class="log-empty">' + AppI18n.t('log.noRecords') + '</td></tr>';
+        this.updateCount(0);
+        return;
+      }
+
+      rows.forEach(function(row) {
+        var tr = document.createElement('tr');
+        var safeRowStr = encodeURIComponent(JSON.stringify(row));
+        var actionBtns = '<div class="log-actions">' +
+          '<button type="button" class="btn-log btn-log-details" onclick="openReceiptModal(decodeURIComponent(\'' + safeRowStr + '\'))">' +
+          AppI18n.t('log.details') + '</button></div>';
+
+        var cells =
+          '<td><b>' + esc(row.seq) + '</b></td>' +
+          '<td>' + esc(row.employee || '—') + '</td>' +
+          '<td>' + esc(row.trxDate || row.dateStr) + '</td>' +
+          '<td>' + esc(row.sysDate || '—') + '</td>';
+
+        if (t === 'IN' || t === 'OUT') {
+          cells +=
+            '<td>' + esc(displayProject(row.project)) + '</td>' +
+            '<td>' + esc(row.description || row.notes) + '</td>' +
+            '<td>' + esc(displayFund(row.fund)) + '</td>' +
+            '<td>' + esc(row.sender) + '</td>' +
+            '<td>' + esc(row.receiver) + '</td>' +
+            '<td>' + esc(displayCurrency(row.currency)) + '</td>' +
+            '<td>' + num(row.qty) + '</td>' +
+            '<td>' + num(row.amount) + '</td>' +
+            '<td><b>' + num(row.total) + '</b></td>';
+        } else if (t === 'EX') {
+          cells +=
+            '<td>' + esc(displayFund(row.fund)) + '</td>' +
+            '<td>' + esc(displayExType(row.exType)) + '</td>' +
+            '<td>' + esc(displayCurrency(row.paidCur)) + '</td>' +
+            '<td>' + esc(displayCurrency(row.recCur)) + '</td>' +
+            '<td>' + num(row.exAmt) + '</td>' +
+            '<td>' + num(row.exRate) + '</td>' +
+            '<td><b>' + num(row.total) + '</b></td>' +
+            '<td>' + esc(row.notes) + '</td>';
+        } else if (t === 'TR') {
+          cells +=
+            '<td>' + esc(displayFund(row.fromFund)) + '</td>' +
+            '<td>' + esc(displayFund(row.toFund)) + '</td>' +
+            '<td>' + esc(displayCurrency(row.currency)) + '</td>' +
+            '<td><b>' + num(row.amount) + '</b></td>' +
+            '<td>' + esc(displayBorrower(row.borrower)) + '</td>' +
+            '<td>' + esc(row.notes) + '</td>';
+        } else {
+          cells +=
+            '<td>' + esc(displayBorrower(row.borrower)) + '</td>' +
+            '<td>' + esc(displayAdvType(row.advType)) + '</td>' +
+            '<td>' + esc(displayProject(row.project)) + '</td>' +
+            '<td>' + esc(typeof displayAdvanceCurrency === 'function' ? displayAdvanceCurrency(row) : displayCurrency(row.currency)) + '</td>' +
+            '<td>' + num(row.qty) + '</td>' +
+            '<td>' + num(row.amount) + '</td>' +
+            '<td>' + num(row.exRate) + '</td>' +
+            '<td><b>' + num(row.total) + '</b></td>' +
+            '<td>' + esc(row.notes) + '</td>';
+        }
+
+        cells +=
+          '<td>' + attachHtml(row.link) + '</td>' +
+          '<td>' + statusBadgeHtml(row.status) + '</td>' +
+          '<td>' + actionBtns + '</td>';
+
+        tr.innerHTML = cells;
+        tbody.appendChild(tr);
+      });
+      this.updateCount(rows.length);
+    },
+
+    applyQuickFilter: function() {
+      var q = ((document.getElementById('monitor-quick-search') || {}).value || '').trim().toLowerCase();
+      var clearBtn = document.getElementById('monitor-quick-clear');
+      if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+      if (!q) {
+        this.renderRows(this.cache);
+        return;
+      }
+      var filtered = (this.cache || []).filter(function(row) {
+        return JSON.stringify(row).toLowerCase().indexOf(q) !== -1;
+      });
+      this.renderRows(filtered);
+    },
+
+    clearQuickFilter: function() {
+      var input = document.getElementById('monitor-quick-search');
+      if (input) input.value = '';
+      this.applyQuickFilter();
+    },
+
+    updateCount: function(n) {
+      var el = document.getElementById('count-monitor');
+      if (!el) return;
+      el.textContent = AppI18n.t('log.resultsCount').replace('{n}', String(n));
+    },
+
+    resetFilters: function() {
+      var emp = document.getElementById('monitor-employee');
+      if (emp) {
+        emp.value = '';
+        AppSelect.refresh('monitor-employee');
+      }
+      var sysFrom = document.getElementById('monitor-sysFrom');
+      var sysTo = document.getElementById('monitor-sysTo');
+      if (sysFrom) sysFrom.value = '';
+      if (sysTo) sysTo.value = '';
+      this.setDefaultDates();
+      var input = document.getElementById('monitor-quick-search');
+      if (input) input.value = '';
+      var clearBtn = document.getElementById('monitor-quick-clear');
+      if (clearBtn) clearBtn.classList.add('hidden');
+      // تصفير النتائج — لا إعادة بحث تلقائية
+      this.cache = [];
+      this.renderRows([]);
+      this.updateCount(0);
+      var msg = document.getElementById('monitorMessage');
+      if (msg) AppUtils.hideMessage('monitorMessage');
+    }
+  };
+
+  function runMonitorSearch() { MonitorOps.runSearch(); }
+  function onMonitorQuickSearch() { MonitorOps.applyQuickFilter(); }
+  function clearMonitorQuickSearch() { MonitorOps.clearQuickFilter(); }
+  function resetMonitorFilters() { MonitorOps.resetFilters(); }
+
+  if (typeof AppI18n !== 'undefined' && AppI18n.onChange) {
+    AppI18n.onChange(function() {
+      if (!MonitorOps.initialized) return;
+      MonitorOps.renderThead();
+      if ((document.getElementById('monitor-quick-search') || {}).value) {
+        MonitorOps.applyQuickFilter();
+      } else {
+        MonitorOps.renderRows(MonitorOps.cache);
+      }
+    });
+  }
+</script>
