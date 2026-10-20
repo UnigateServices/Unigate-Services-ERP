@@ -391,12 +391,6 @@ export function resetUserPassword(companyId: string, userId: string, password: s
   return { ok: true as const };
 }
 
-export function listAudit(companyId?: string) {
-  const rows = loadDb().audit;
-  const filtered = companyId ? rows.filter((item) => item.companyId === companyId) : rows;
-  return filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
 export function enterCompany(session: AppSession, companyId: string) {
   const db = loadDb();
   if (!db.companies.some((item) => item.id === companyId)) return fail('NOT_FOUND');
