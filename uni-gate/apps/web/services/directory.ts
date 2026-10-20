@@ -4,7 +4,6 @@ import type {
   AppSession,
   AuditAction,
   Company,
-  CompanyModule,
   ModuleKey,
   Role,
   RolePreset,
@@ -388,38 +387,6 @@ export function resetUserPassword(companyId: string, userId: string, password: s
   if (!membership || !user) return fail('NOT_FOUND');
   user.password = password;
   audit(db, actor, companyId, 'UPDATE', 'user', userId);
-  saveDb(db);
-  return { ok: true as const };
-}
-
-export function listModules(companyId: string): CompanyModule[] {
-  const db = loadDb();
-  const rows = db.modules.filter((item) => item.companyId === companyId);
-  return MODULE_KEYS.map((moduleKey) => {
-    return (
-      rows.find((item) => item.moduleKey === moduleKey) ?? {
-        id: `${companyId}_${moduleKey}`,
-        companyId,
-        moduleKey,
-        enabled: false,
-      }
-    );
-  });
-}
-
-export function setModules(companyId: string, enabled: ModuleKey[], actor: ActorRef) {
-  const db = loadDb();
-  if (!db.companies.some((item) => item.id === companyId)) return fail('NOT_FOUND');
-  db.modules = db.modules.filter((item) => item.companyId !== companyId);
-  for (const moduleKey of MODULE_KEYS) {
-    db.modules.push({
-      id: createId('mod'),
-      companyId,
-      moduleKey,
-      enabled: enabled.includes(moduleKey),
-    });
-  }
-  audit(db, actor, companyId, 'UPDATE', 'modules', companyId);
   saveDb(db);
   return { ok: true as const };
 }

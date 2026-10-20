@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env';
 import { HealthModule } from './health/health.module';
 import { LocationsModule } from './locations/locations.module';
+import { ModulesModule } from './modules/modules.module';
 import { PlatformModule } from './platform/platform.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AuthModule,
     PlatformModule,
     LocationsModule,
+    ModulesModule,
     RolesModule,
     UsersModule,
   ],

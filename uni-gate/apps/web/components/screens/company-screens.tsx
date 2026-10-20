@@ -11,7 +11,8 @@ import { formatDate, formatUsd, isPastDate, todayDamascus } from '@/lib/dates';
 import { moduleLabel } from '@/lib/messages';
 import { usePreferences } from '@/lib/preferences';
 import { useGate } from '@/lib/use-gate';
-import { codeIssue, getCompany, listModules, setModules } from '@/services/directory';
+import { codeIssue } from '@/services/directory';
+import { listPlatformModules, updatePlatformModules } from '@/services/modules';
 import {
   activatePlatformCompany,
   createPlatformCompany,
@@ -335,6 +336,9 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
             <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/roles`}>
               {messages.navRoles}
             </Link>
+            <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/modules`}>
+              {messages.navModules}
+            </Link>
             <Link className="secondary-button link-button" href={`/platform/companies/${company.id}/edit`}>
               {messages.editSubscription}
             </Link>
@@ -371,7 +375,6 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
           <dd>{counts.users}</dd>
         </div>
       </dl>
-      <p className="field-hint">{messages.pendingAreas}</p>
       <h2>{messages.enabledModules}</h2>
       {enabled.length === 0 ? (
         <p>{messages.none}</p>
@@ -391,19 +394,77 @@ export function CompanyDetailsScreen({ companyId }: { companyId: string }) {
 export function CompanyModulesScreen({ companyId }: { companyId: string }) {
   const session = useGate('platform');
   const { messages } = usePreferences();
-  const company = getCompany(companyId);
-  const initial = company ? listModules(company.id).filter((item) => item.enabled).map((item) => item.moduleKey) : [];
-  const [selected, setSelected] = useState<ModuleKey[]>(initial);
+  const [companyName, setCompanyName] = useState('');
+  const [selected, setSelected] = useState<ModuleKey[]>([]);
+  const [savedKeys, setSavedKeys] = useState<ModuleKey[]>([]);
+  const [ready, setReady] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [saved, setSaved] = useState(false);
-  if (!session) return <p role="status">{messages.checking}</p>;
-  if (!company) return <PlatformShell session={session}><p>{messages.notFound}</p></PlatformShell>;
-  const turningOff = initial.filter((key) => !selected.includes(key));
+
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    setSaved(false);
+    setSaveError('');
+    void Promise.all([getPlatformCompany(companyId), listPlatformModules(companyId)]).then(([company, modules]) => {
+      if (cancelled) return;
+      if (!company.ok || !modules.ok) {
+        const code = !company.ok ? company.code : modules.ok ? '' : modules.code;
+        setMissing(code === 'NOT_FOUND');
+        setLoadError(code === 'NOT_FOUND' ? '' : messages.network);
+        setReady(true);
+        return;
+      }
+      const enabled = modules.items.filter((item) => item.enabled).map((item) => item.key);
+      setCompanyName(company.company.name);
+      setSelected(enabled);
+      setSavedKeys(enabled);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, messages.network]);
+
+  if (!session || !ready) return <p role="status">{messages.checking}</p>;
+  if (loadError) {
+    return (
+      <PlatformShell session={session}>
+        <InlineAlert message={loadError} />
+      </PlatformShell>
+    );
+  }
+  if (missing || !companyName) {
+    return (
+      <PlatformShell session={session}>
+        <p>{messages.notFound}</p>
+      </PlatformShell>
+    );
+  }
+  const turningOff = savedKeys.filter((key) => !selected.includes(key));
 
   function persist() {
-    setModules(companyId, selected, { id: session!.userId, name: session!.name });
-    setSaved(true);
-    setConfirm(false);
+    setSaving(true);
+    setSaveError('');
+    void updatePlatformModules(
+      companyId,
+      MODULE_KEYS.map((key) => ({ key, enabled: selected.includes(key) })),
+    ).then((result) => {
+      setSaving(false);
+      setConfirm(false);
+      if (!result.ok) {
+        setSaveError(messages.network);
+        return;
+      }
+      const enabled = result.items.filter((item) => item.enabled).map((item) => item.key);
+      setSelected(enabled);
+      setSavedKeys(enabled);
+      setSaved(true);
+    });
   }
 
   return (
@@ -413,11 +474,12 @@ export function CompanyModulesScreen({ companyId }: { companyId: string }) {
         crumbs={[
           { href: '/platform', label: messages.navDashboard },
           { href: '/platform/companies', label: messages.navCompanies },
-          { href: `/platform/companies/${company.id}`, label: company.name },
+          { href: `/platform/companies/${companyId}`, label: companyName },
           { label: messages.navModules },
         ]}
       />
       {saved ? <InlineAlert tone="success" message={messages.saved} /> : null}
+      {saveError ? <InlineAlert message={saveError} /> : null}
       <form
         className="stack-form"
         onSubmit={(event) => {
@@ -442,7 +504,7 @@ export function CompanyModulesScreen({ companyId }: { companyId: string }) {
             </span>
           </label>
         ))}
-        <PrimaryButton>{messages.save}</PrimaryButton>
+        <PrimaryButton disabled={saving}>{saving ? messages.saving : messages.save}</PrimaryButton>
       </form>
       <ConfirmDialog
         open={confirm}

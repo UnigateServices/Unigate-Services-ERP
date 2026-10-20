@@ -184,6 +184,7 @@ export type Messages = {
   placeholderBody: string;
   backDashboard: string;
   unknownSection: string;
+  moduleUnavailable: string;
   accountTitle: string;
   appearance: string;
   changePassword: string;
@@ -377,6 +378,7 @@ const ar: Messages = {
   placeholderBody: 'لا توجد عمليات في هذا القسم حالياً.',
   backDashboard: 'العودة إلى اللوحة',
   unknownSection: 'قسم غير معروف.',
+  moduleUnavailable: 'هذه الوحدة غير متاحة.',
   accountTitle: 'الحساب',
   appearance: 'المظهر',
   changePassword: 'تغيير كلمة المرور',
@@ -570,6 +572,7 @@ const en: Messages = {
   placeholderBody: 'There is no work to do in this section yet.',
   backDashboard: 'Back to the dashboard',
   unknownSection: 'Unknown section.',
+  moduleUnavailable: 'This module is not available.',
   accountTitle: 'Account',
   appearance: 'Appearance',
   changePassword: 'Change password',
