@@ -1,6 +1,6 @@
 # Unigate handoff
 
-Continuation document for a new Agent. It describes the repository after Phase 8 was accepted and merged on 20 October 2026. It does not replace reading the code.
+Continuation document for a new Agent. It describes the repository after Phase 9 was accepted and merged on 20 October 2026. It does not replace reading the code.
 
 `UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; where they differ, this file and the code win.
 
@@ -16,9 +16,9 @@ Continuation document for a new Agent. It describes the repository after Phase 8
 
 ## 1. Current completed phase and exact status
 
-**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, and Phase 8 company modules.
+**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, and Phase 9 platform audit list.
 
-**Not started:** Phase 9, the audit list API. Do not start it until the user explicitly says so. Finance, exchange, gold, aviation, engineering, and HR business logic are still not built.
+**Not started:** Phase 10. Do not start it until the user explicitly says so. Finance, exchange, gold, aviation, engineering, and HR business logic are still not built.
 
 **Git**
 
@@ -36,10 +36,12 @@ Continuation document for a new Agent. It describes the repository after Phase 8
 | Phase 7 users | `5209f39` — customer users and memberships |
 | Phase 8 modules | `f147ec1` — company module management and the module access check |
 | Phase 8 merge | `640a02e` — pull request #1, `phase-8-modules` into `main` |
+| Phase 9 audit | `c58b33a` — platform audit list API and the real support log screen |
+| Phase 9 merge | `6dfa643` — pull request #2, `phase-9-audit` into `main` |
 | Finance reference files | `acf36ce` — `Reference/tradivia-finance-v2` tracked as normal files |
 | Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
-`main` is `640a02e`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, and company modules. Do not reset or clean the tree.
+`main` is `6dfa643`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
 
 ---
 
@@ -59,12 +61,12 @@ Continuation document for a new Agent. It describes the repository after Phase 8
 - Company modules are PostgreSQL-backed. `enabled` is the only per-company flag. `ready` stays in `MODULE_REGISTRY` and is `false` for all six keys. Platform operators list and replace flags. Members and a platform operator in support read the session company. `ModuleAccessGuard` with `RequireEnabledModule` is applied only to `GET /api/modules/:key`.
 - A missing `CompanyModule` row is disabled. `PUT` creates a row only for a key in the payload. An operator in support is held to the same enabled check as a member. An operator with no support company gets `409` `CONFLICT` before the key is checked, including for an unknown key. After a company is known, an unknown key is `404` `NOT_FOUND` and a disabled or missing module is `403` `FORBIDDEN`. A module change writes an audit `UPDATE` with target type `module` and target id equal to the key only when the enabled flag actually changes. It does not change `authVersion` and it does not delete rows.
 - The development seed upserts any missing module key as disabled and does not change an existing `enabled` flag.
-- Prisma schema and three migrations. No Phase 7 or Phase 8 migration.
+- The platform audit list is read-only and PostgreSQL-backed. `GET /api/platform/access-log` uses `AuthGuard` and `PlatformGuard`. Filters are `page`, `pageSize`, and `companyId`. Default page size is 20 and the maximum is 100. Rows are ordered by `createdAt` descending, then `id` descending. Each item selects only the actor name and the company name and code, plus the audit fields. An unknown `companyId` is `404` `NOT_FOUND`. The web client is `uni-gate/apps/web/services/audit.ts`. The support log screen is in `uni-gate/apps/web/components/screens/platform-lists.tsx`. Tests are in `uni-gate/apps/api/src/platform/audit/access-log.spec.ts`.
+- Prisma schema and three migrations. No Phase 7, Phase 8, or Phase 9 migration.
 - Development-only seed: `npm run db:seed:dev` from `uni-gate`. It refuses `NODE_ENV=production`.
 
 **Planned, not implemented**
 
-- Audit-list HTTP API. Entering support writes an `ENTER` row, and module flag changes write `UPDATE` rows, but the audit screen is still mock.
 - Finance, exchange, gold, aviation, engineering, and HR business logic.
 - Production hosting.
 
@@ -85,8 +87,8 @@ Continuation document for a new Agent. It describes the repository after Phase 8
 - Platform company, branch, role, user, and module screens do not read those records from `ug_mock_db`.
 - Server-backed user screens: `/platform/companies/:id/users`, `/platform/companies/:id/users/new`, `/platform/companies/:id/users/:userId`, `/app/users`, `/app/users/new`, and `/app/users/:userId`. Company detail links to Users. The customer dashboard user count, shown only when `canManageUsers` is true, is the `total` from the authorized user list.
 - Server-backed module screens: `/platform/companies/:id/modules`, `/app/modules`, and `/app/modules/:key`. Company detail links to Modules and lists enabled modules from the company detail response. The customer navigation and dashboard show only enabled modules. An enabled module opens the not-ready page. A direct URL for a disabled module shows that it is not available. An unknown key shows an unknown section. Turning a module off asks for confirmation and does not delete data.
-- The audit screen still uses the mock store. The dashboard's recent-activity table still uses the mock log. Recent activity is text only and does not open a company.
-- The directory mock remains for audit. Branch, role, user, and module screens have one source of truth: PostgreSQL.
+- The support log at `/platform/audit` and the dashboard recent-activity table read `GET /api/platform/access-log`. Recent activity is text only and does not open a company. A member who opens `/platform/audit` is sent to `/app` by the existing platform session gate.
+- Branch, role, user, module, and audit screens have one source of truth: PostgreSQL. Unused mock mutators remain in `mocks/db.ts`, `mocks/seed.ts`, and `services/directory.ts`. They are not called by the screens.
 - The customer dashboard branch count comes from the authorized location list. The platform company detail branch and user counts remain the PostgreSQL counts. The branch count includes inactive branches.
 - `readUserPassword` is not in the mock directory and is not an API. Own password change stays on `POST /api/auth/password`. An administrator reset uses the user password routes below.
 
@@ -179,6 +181,12 @@ Platform module routes, platform-operator only. A member receives `403` `FORBIDD
 |---|---|---|
 | GET | `/api/platform/companies/:companyId/modules` | `{ items }` of `{ key, enabled, ready, companyId }`. Unknown company is `404` `NOT_FOUND`. A missing row is disabled. |
 | PUT | `/api/platform/companies/:companyId/modules` | Body `{ modules: [{ key, enabled }] }`. Unknown company is `404` `NOT_FOUND`. Unknown or duplicate key is `400` `VALIDATION_ERROR`. The payload is one transaction. Keys not supplied stay unchanged. Repeating the same values changes nothing. A missing row for a supplied key is created. An audit `UPDATE` with target type `module` and target id equal to the key is written only when `enabled` actually changes. |
+
+Platform audit list, platform-operator only. Read-only. A member receives `403` `FORBIDDEN`. A missing cookie receives `401` `UNAUTHORIZED`. An operator in support sees the same global list.
+
+| Method | Path | Behavior |
+|---|---|---|
+| GET | `/api/platform/access-log` | `{ items, page, pageSize, total }`. Default page size 20, maximum 100. Optional `companyId`, `page`, and `pageSize`. Ordered by `createdAt` descending, then `id` descending. Each item is `id`, `createdAt`, `action`, `targetType`, `targetId`, `actorUserId`, `actorName`, `companyId`, `companyName`, and `companyCode`. No other user field is returned. Unknown `companyId` is `404` `NOT_FOUND`. There is no write route. |
 
 A member receives `403` `FORBIDDEN` on the platform routes above. A missing cookie receives `401`. `priceUsd` is a decimal string for PostgreSQL `numeric(12,2)`. A past `expiresOn` does not change `ACTIVE` to `SUSPENDED`. Role presets are `tradivia` (four roles) and `simple` (`OWNER` and `STAFF`) in `role-presets.ts`. They are not global authorization. The development seed fills those preset roles for the local sample companies.
 
@@ -314,20 +322,25 @@ For every phase: preflight first (`git status`, PostgreSQL on port 5433, existin
 4. `ModulesModule` does not export `ModulesService` or `ModuleAccessGuard`. Add exports when the first real module needs the guard.
 5. Two simultaneous PUTs on a company with a missing `CompanyModule` row could return 500 on the unique constraint instead of a clean result.
 6. `GET /api/modules/:key` checks enabled twice (guard and service).
-7. The API test suite took 354 s on one run and 112 s on a later run; the time varies with machine load. Investigate only if it becomes a problem.
+7. The API test suite time varies a lot (95 s to 354 s). Check why.
 8. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
+9. The access-log `page` has no upper bound (`pageSize` is capped at 100, `page` is not).
+10. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
+11. Member actions are not audited. A member create, edit, or password reset writes no `AuditEntry`.
+12. Unused mock code remains (`mocks/db.ts`, `mocks/seed.ts`, and unused directory mutators). Remove it in a separate cleanup commit after approval.
 
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree. Do not stage the untracked root `package.json` unless the user asks.
-2. Wait until the user explicitly starts **Phase 9, the audit list API**, and names its scope.
-3. Do not start finance before that. The user chooses the scope.
+2. Wait until the user explicitly starts **Phase 10** and names its scope.
+3. Do not start finance, a new audit write, or a customer-facing audit before that. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
 6. Branch data is already `Location` in PostgreSQL. Do not put branch lists back in `ug_mock_db`. Keep branch-name uniqueness case-sensitive unless the user changes that rule. Do not make an inactive location block login unless the user asks for that rule.
 7. Roles are already PostgreSQL-backed. Do not put role lists back in `ug_mock_db`. Do not let members create or edit roles. Do not increment `authVersion` for a role edit. Do not treat approval flags as a finance workflow.
 8. Customer users are already PostgreSQL-backed. Do not put them back in `ug_mock_db`. Do not let a member change their own role, branch, or status, or reset their own password, through the user administration routes.
 9. Company modules are already PostgreSQL-backed. Do not put module flags back in `ug_mock_db`. Do not let a member toggle `enabled`. Do not store `ready` per company. Do not increment `authVersion` for a module change. A missing row stays disabled until a `PUT` supplies that key.
+10. The platform audit list is already PostgreSQL-backed and read-only. Do not put it back in `ug_mock_db`. Do not add a write route. Do not show it to members.
 
 Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start commands are in section 6. Web: `npm run dev:web`. API: `npm run dev:api`. Both are run from `uni-gate`.
 
@@ -335,7 +348,8 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 
 ## DO NOT DO
 
-- Do not start Phase 9, the audit list, until the user explicitly says so.
+- Do not start Phase 10 until the user explicitly says so.
+- Do not add an audit write, and do not show the audit list to members.
 - Do not let a member toggle a company module.
 - Do not put module flags back in `ug_mock_db`.
 - Do not let a member change their own role, branch, or status, or reset their own password, through the user administration routes.
