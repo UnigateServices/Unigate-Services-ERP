@@ -18,7 +18,9 @@ export default function CustomerAppLayout({ children }: { children: ReactNode })
     pathname === '/app/roles' ||
     pathname.startsWith('/app/roles/') ||
     pathname === '/app/users' ||
-    pathname.startsWith('/app/users/');
+    pathname.startsWith('/app/users/') ||
+    pathname === '/app/modules' ||
+    pathname.startsWith('/app/modules/');
   if (session.actor === 'platform' && !connected) {
     const company = session.actingCompany;
     return (

@@ -9,7 +9,7 @@
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { CompanyStatus, PrismaClient, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
-import { passwordIssue, todayInDamascus } from '@unigate/shared';
+import { MODULE_KEYS, passwordIssue, todayInDamascus } from '@unigate/shared';
 import * as bcrypt from 'bcrypt';
 import { ROLE_PRESETS } from '../src/platform/companies/role-presets';
 
@@ -247,6 +247,17 @@ async function ensureCustomer(input: {
       locationId: null,
     },
   });
+  await ensureCompanyModules(input.companyId);
+}
+
+async function ensureCompanyModules(companyId: string) {
+  for (const moduleKey of MODULE_KEYS) {
+    await prisma.companyModule.upsert({
+      where: { companyId_moduleKey: { companyId, moduleKey } },
+      create: { companyId, moduleKey, enabled: false },
+      update: {},
+    });
+  }
 }
 
 async function ensurePresetRoles(companyId: string, preset: 'tradivia' | 'simple') {

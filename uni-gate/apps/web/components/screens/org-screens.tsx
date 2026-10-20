@@ -14,7 +14,8 @@ import { canCreateBranch, canEditRoles, canManageUsers, canSeeRoles, seesAllBran
 import { usePreferences } from '@/lib/preferences';
 import { changeOwnPassword, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
-import { listModules, passwordIssue, roleKeyIssue } from '@/services/directory';
+import { passwordIssue, roleKeyIssue } from '@/services/directory';
+import { getSessionModule, listSessionModules } from '@/services/modules';
 import {
   createCustomerUser,
   createPlatformUser,
@@ -44,24 +45,57 @@ import {
   type Branch,
 } from '@/services/locations';
 import type { AppSession, ModuleKey, VisibilityScope } from '@/types/auth';
-import { MODULE_KEYS } from '@/types/auth';
+
+function moduleLinks(enabled: ModuleKey[], messages: ReturnType<typeof usePreferences>['messages']) {
+  const items = [{ href: '/app/modules', label: messages.navModules }];
+  for (const key of enabled) items.push({ href: `/app/modules/${key}`, label: moduleLabel(key, messages) });
+  return items;
+}
 
 function appNav(session: AppSession, enabled: ModuleKey[], messages: ReturnType<typeof usePreferences>['messages']) {
   const items = [{ href: '/app', label: messages.welcome }];
   items.push({ href: '/app/branches', label: messages.navBranches });
   if (canManageUsers(session)) items.push({ href: '/app/users', label: messages.navUsers });
   if (canSeeRoles(session)) items.push({ href: '/app/roles', label: messages.navRoles });
-  items.push({ href: '/app/modules', label: messages.navModules });
-  for (const key of enabled) items.push({ href: `/app/modules/${key}`, label: moduleLabel(key, messages) });
+  items.push(...moduleLinks(enabled, messages));
   return items;
+}
+
+function supportNav(enabled: ModuleKey[], messages: ReturnType<typeof usePreferences>['messages']) {
+  return [
+    { href: '/platform', label: messages.navDashboard },
+    { href: '/platform/companies', label: messages.navCompanies },
+    { href: '/app/branches', label: messages.navBranches },
+    { href: '/app/users', label: messages.navUsers },
+    { href: '/app/roles', label: messages.navRoles },
+    ...moduleLinks(enabled, messages),
+  ];
+}
+
+function useEnabledModuleKeys(companyId: string | null) {
+  const [enabled, setEnabled] = useState<ModuleKey[]>([]);
+  useEffect(() => {
+    if (!companyId) {
+      setEnabled([]);
+      return;
+    }
+    let cancelled = false;
+    void listSessionModules().then((result) => {
+      if (cancelled) return;
+      setEnabled(result.ok ? result.items.filter((item) => item.enabled).map((item) => item.key) : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+  return enabled;
 }
 
 export function useAppItems(session: AppSession | null, companyId: string | null) {
   const { messages } = usePreferences();
+  const enabled = useEnabledModuleKeys(session?.companyId ?? null);
   if (!session || !companyId) return [{ href: '/app', label: messages.welcome }];
-  const enabled = listModules(companyId)
-    .filter((item) => item.enabled)
-    .map((item) => item.moduleKey);
+  if (session.actor === 'platform') return supportNav(enabled, messages);
   return appNav(session, enabled, messages);
 }
 
@@ -190,21 +224,10 @@ function OrgFrame({
   companyId: string;
   children: React.ReactNode;
 }) {
-  const { messages } = usePreferences();
   const appItems = useAppItems(session, companyId);
   if (chrome === 'platform') return <PlatformShell session={session}>{children}</PlatformShell>;
-  const items =
-    session.actor === 'platform'
-      ? [
-          { href: '/platform', label: messages.navDashboard },
-          { href: '/platform/companies', label: messages.navCompanies },
-          { href: '/app/branches', label: messages.navBranches },
-          { href: '/app/users', label: messages.navUsers },
-          { href: '/app/roles', label: messages.navRoles },
-        ]
-      : appItems;
   return (
-    <AppShell session={session} items={items}>
+    <AppShell session={session} items={appItems}>
       {children}
     </AppShell>
   );
@@ -1083,16 +1106,7 @@ export function CustomerDashboard() {
 
   if (!session) return <p role="status">{messages.checking}</p>;
   if (!session.companyId) return <p className="field-hint">{messages.pendingAreas}</p>;
-  const items =
-    session.actor === 'platform'
-      ? [
-          { href: '/platform', label: messages.navDashboard },
-          { href: '/platform/companies', label: messages.navCompanies },
-          { href: '/app/branches', label: messages.navBranches },
-          { href: '/app/users', label: messages.navUsers },
-          { href: '/app/roles', label: messages.navRoles },
-        ]
-      : appItems;
+  const items = appItems;
   const scope =
     session.visibility === 'PLATFORM' || session.visibility === 'ALL_BRANCHES'
       ? messages.scopeAll
@@ -1120,7 +1134,6 @@ export function CustomerDashboard() {
           </Link>
         ) : null}
       </div>
-      <p className="field-hint">{messages.pendingAreas}</p>
     </AppShell>
   );
 }
@@ -1129,25 +1142,45 @@ export function ModulesOverviewScreen() {
   const session = useGate('app');
   const { messages } = usePreferences();
   const items = useAppItems(session, session?.companyId ?? null);
-  if (!session?.companyId) return <p role="status">{messages.checking}</p>;
-  const enabled = listModules(session.companyId).filter((item) => item.enabled);
+  const [enabled, setEnabled] = useState<ModuleKey[] | null>(null);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    void listSessionModules().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setEnabled([]);
+        setNotice(result.code === 'CONFLICT' ? messages.pendingAreas : messages.network);
+        return;
+      }
+      setNotice('');
+      setEnabled(result.items.filter((item) => item.enabled).map((item) => item.key));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages.network, messages.pendingAreas, session]);
+
+  if (!session || enabled === null) return <p role="status">{messages.checking}</p>;
   return (
     <AppShell session={session} items={items}>
       <PageHeader title={messages.modulesOverview} />
-      {enabled.length === 0 ? (
-        <EmptyState text={messages.noModules} />
-      ) : (
+      {notice ? <p className="field-hint">{notice}</p> : null}
+      {!notice && enabled.length === 0 ? <EmptyState text={messages.noModules} /> : null}
+      {!notice && enabled.length > 0 ? (
         <ul className="module-list">
-          {enabled.map((item) => (
-            <li key={item.moduleKey}>
-              <Link href={`/app/modules/${item.moduleKey}`}>
-                {moduleLabel(item.moduleKey, messages)}
+          {enabled.map((key) => (
+            <li key={key}>
+              <Link href={`/app/modules/${key}`}>
+                {moduleLabel(key, messages)}
                 <small>{messages.notReadyYet}</small>
               </Link>
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </AppShell>
   );
 }
@@ -1156,14 +1189,35 @@ export function ModulePlaceholderScreen({ moduleKey }: { moduleKey: string }) {
   const session = useGate('app');
   const { messages } = usePreferences();
   const items = useAppItems(session, session?.companyId ?? null);
-  if (!session?.companyId) return <p role="status">{messages.checking}</p>;
-  const known = (MODULE_KEYS as readonly string[]).includes(moduleKey);
-  const row = listModules(session.companyId).find((item) => item.moduleKey === moduleKey);
+  const [view, setView] = useState<'loading' | 'unavailable' | 'unknown' | 'conflict' | 'network' | 'placeholder'>('loading');
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    void getSessionModule(moduleKey).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setView('placeholder');
+        return;
+      }
+      if (result.code === 'FORBIDDEN') setView('unavailable');
+      else if (result.code === 'NOT_FOUND') setView('unknown');
+      else if (result.code === 'CONFLICT') setView('conflict');
+      else setView('network');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleKey, session]);
+
+  if (!session || view === 'loading') return <p role="status">{messages.checking}</p>;
   return (
     <AppShell session={session} items={items}>
-      {!known ? <p>{messages.unknownSection}</p> : null}
-      {known && !row?.enabled ? <p>{messages.forbidden}</p> : null}
-      {known && row?.enabled ? (
+      {view === 'unknown' ? <p>{messages.unknownSection}</p> : null}
+      {view === 'unavailable' ? <p>{messages.moduleUnavailable}</p> : null}
+      {view === 'conflict' ? <p className="field-hint">{messages.pendingAreas}</p> : null}
+      {view === 'network' ? <InlineAlert message={messages.network} /> : null}
+      {view === 'placeholder' ? (
         <>
           <PageHeader title={moduleLabel(moduleKey, messages)} />
           <EmptyState
