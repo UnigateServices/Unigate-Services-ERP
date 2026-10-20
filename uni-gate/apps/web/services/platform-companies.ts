@@ -30,8 +30,8 @@ function failed(status: number, body: unknown): Failure {
   return { ok: false, code };
 }
 
-export async function listPlatformCompanies(query: { page: number; q?: string; status?: '' | 'ACTIVE' | 'SUSPENDED' }) {
-  const params = new URLSearchParams({ page: String(query.page), pageSize: '20' });
+export async function listPlatformCompanies(query: { page: number; pageSize?: number; q?: string; status?: '' | 'ACTIVE' | 'SUSPENDED' }) {
+  const params = new URLSearchParams({ page: String(query.page), pageSize: String(query.pageSize ?? 20) });
   if (query.q?.trim()) params.set('q', query.q.trim());
   if (query.status) params.set('status', query.status);
   try {
