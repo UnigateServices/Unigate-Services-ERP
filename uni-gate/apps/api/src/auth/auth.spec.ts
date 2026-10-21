@@ -178,12 +178,26 @@ describe('authentication', () => {
     expect((await post('/api/auth/login', { companyCode: 'tradivia', username: 'manager', password: 'Manager1' })).body.code).toBe('LOCKED');
   });
 
+  it('counts parallel wrong attempts against the same five-attempt allowance', async () => {
+    const member = await memberUser({ code: 'tradivia', username: 'manager', password: 'Manager1' });
+    const attempts = await Promise.all(
+      Array.from({ length: 20 }, () => post('/api/auth/login', { companyCode: 'tradivia', username: 'manager', password: 'Wrong123' })),
+    );
+    const codes = attempts.map((response) => response.body.code as string);
+    expect(codes.filter((code) => code === 'WRONG_CREDENTIALS')).toHaveLength(5);
+    expect(codes.filter((code) => code === 'LOCKED')).toHaveLength(15);
+    const state = await failureState(member.userId);
+    expect(state.failedLoginCount).toBe(0);
+    expect(state.lockedUntil && state.lockedUntil.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
+  });
+
   it('rejects a missing, tampered, expired, or stale session', async () => {
     await request(app.getHttpServer()).get('/api/auth/me').expect(401);
     const member = await memberUser({ code: 'tradivia', username: 'manager', password: 'Manager1' });
     const cookie = await loginMember('tradivia', 'manager', 'Manager1');
     const tampered = cookie.slice(0, -4) + 'xxxx';
     expect((await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', tampered)).status).toBe(401);
+    expect((await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', 'ug_access=%E0%A4%A')).status).toBe(401);
 
     const expired = sessions.sign(
       { userId: member.userId, actor: 'member', authVersion: 1, actingCompanyId: null },

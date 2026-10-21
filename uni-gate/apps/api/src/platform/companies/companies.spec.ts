@@ -72,6 +72,7 @@ describe('platform companies', () => {
     expect(pageTwo.body.items[0].name).toBe('Beta');
 
     await request(app.getHttpServer()).get('/api/platform/companies').query({ pageSize: 101 }).set('Cookie', cookie).expect(400);
+    await request(app.getHttpServer()).get('/api/platform/companies').query({ page: 10001 }).set('Cookie', cookie).expect(400);
     const byName = await request(app.getHttpServer())
       .get('/api/platform/companies')
       .query({ q: 'alp' })
@@ -177,6 +178,13 @@ describe('platform companies', () => {
       .send({ name: 'Kept Two', code: 'kept-two', priceUsd: '8.00', expiresOn: '2027-08-01' })
       .expect(200);
     expect(renamed.body).toMatchObject({ name: 'Kept Two', code: 'kept-two', priceUsd: '8.00', status: 'ACTIVE' });
+    const repeated = await request(app.getHttpServer())
+      .patch(`/api/platform/companies/${companyId}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie)
+      .send({ name: 'Kept Two', code: 'kept-two', priceUsd: '8', expiresOn: '2027-08-01' })
+      .expect(200);
+    expect(repeated.body).toMatchObject({ name: 'Kept Two', priceUsd: '8.00', expiresOn: '2027-08-01' });
 
     await createCompany(cookie, { name: 'Taken', code: 'taken' });
     const clash = await request(app.getHttpServer())

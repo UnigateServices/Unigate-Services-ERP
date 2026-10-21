@@ -58,10 +58,10 @@ export class AuthService {
       await this.padFailure(password);
       throw this.wrongCredentials();
     }
-    await this.assertNotLocked(user);
+    await this.reserveAttempt(user.id);
     const matches = await this.passwords.verify(password, user.passwordHash);
     if (!matches) {
-      await this.recordFailure(user.id);
+      await this.lockIfExhausted(user.id);
       throw this.wrongCredentials();
     }
     if (user.status !== UserStatus.ACTIVE) {
@@ -95,10 +95,10 @@ export class AuthService {
       await this.padFailure(password);
       throw this.wrongCredentials();
     }
-    await this.assertNotLocked(user);
+    await this.reserveAttempt(user.id);
     const matches = await this.passwords.verify(password, user.passwordHash);
     if (!matches) {
-      await this.recordFailure(user.id);
+      await this.lockIfExhausted(user.id);
       throw this.wrongCredentials();
     }
     if (user.status !== UserStatus.ACTIVE) {
@@ -225,33 +225,36 @@ export class AuthService {
     return company;
   }
 
-  private async assertNotLocked(user: { id: string; lockedUntil: Date | null; failedLoginCount: number }) {
-    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+  /**
+   * Counts this attempt before the password is checked, in one conditional update,
+   * so parallel attempts cannot pass the lock check together. An attempt that finds
+   * the account locked, or the allowance already taken, is refused as LOCKED.
+   */
+  private async reserveAttempt(userId: string) {
+    const now = new Date();
+    const reserved = await this.prisma.user.updateMany({
+      where: {
+        id: userId,
+        failedLoginCount: { lt: MAX_FAILURES },
+        OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
+      },
+      data: { failedLoginCount: { increment: 1 } },
+    });
+    if (reserved.count === 0) {
+      // A used-up allowance without a lock time (an attempt that never finished) becomes a normal lock.
+      await this.lockIfExhausted(userId);
       throw new UnauthorizedException({
         code: ErrorCode.LOCKED,
         message: 'This account is temporarily locked.',
       });
     }
-    if (user.lockedUntil) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { lockedUntil: null, failedLoginCount: 0 },
-      });
-    }
   }
 
-  private async recordFailure(userId: string) {
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { failedLoginCount: { increment: 1 } },
-      select: { failedLoginCount: true },
+  private async lockIfExhausted(userId: string) {
+    await this.prisma.user.updateMany({
+      where: { id: userId, failedLoginCount: { gte: MAX_FAILURES } },
+      data: { failedLoginCount: 0, lockedUntil: new Date(Date.now() + LOCK_MS) },
     });
-    if (updated.failedLoginCount >= MAX_FAILURES) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { failedLoginCount: 0, lockedUntil: new Date(Date.now() + LOCK_MS) },
-      });
-    }
   }
 
   private async clearFailures(userId: string) {

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ErrorCode, passwordIssue } from '@unigate/shared';
+import type { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -29,7 +30,7 @@ export class PasswordService {
       });
     }
     this.assertPolicy(newPassword);
-    await this.writeHash(userId, newPassword);
+    await this.writeHash(this.prisma, userId, await this.hash(newPassword));
   }
 
   /**
@@ -42,7 +43,7 @@ export class PasswordService {
     if (!user) {
       throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'User was not found.' });
     }
-    await this.writeHash(userId, newPassword);
+    await this.writeHash(this.prisma, userId, await this.hash(newPassword));
   }
 
   private assertPolicy(password: string) {
@@ -53,11 +54,12 @@ export class PasswordService {
     });
   }
 
-  private async writeHash(userId: string, password: string) {
-    await this.prisma.user.update({
+  /** Stores a new hash and ends existing sessions. Pass a transaction client to share its commit. */
+  async writeHash(client: Prisma.TransactionClient | PrismaService, userId: string, passwordHash: string) {
+    await client.user.update({
       where: { id: userId },
       data: {
-        passwordHash: await this.hash(password),
+        passwordHash,
         authVersion: { increment: 1 },
         failedLoginCount: 0,
         lockedUntil: null,

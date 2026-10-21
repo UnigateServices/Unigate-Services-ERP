@@ -220,6 +220,29 @@ describe('roles', () => {
     expect(await prisma.membership.count({ where: { roleId: unused.body.id } })).toBe(0);
   });
 
+  it('does not let a scope change and a user assignment race into an invalid membership', async () => {
+    await platformUser();
+    const cookie = await loginPlatform();
+    const alpha = await createCompany(cookie, 'Alpha', 'alpha', 'tradivia');
+    const home = await prisma.location.findFirstOrThrow({ where: { companyId: alpha.id, name: 'Alpha' } });
+    for (let index = 0; index < 10; index += 1) {
+      const key = `RACE_${index}`;
+      const role = await createRole(cookie, alpha.id, roleBody({ key, visibilityScope: 'BRANCH' }));
+      await Promise.all([
+        patchRole(cookie, alpha.id, role.body.id, roleBody({ key, visibilityScope: 'ALL_BRANCHES' })),
+        request(app.getHttpServer())
+          .post(`/api/platform/companies/${alpha.id}/users`)
+          .set('Origin', ORIGIN)
+          .set('Cookie', cookie)
+          .send({ name: key, username: key.toLowerCase(), password: 'Secret123', email: null, phone: null, roleId: role.body.id, locationId: home.id }),
+      ]);
+    }
+    const invalid = await prisma.membership.count({
+      where: { companyId: alpha.id, locationId: { not: null }, role: { visibilityScope: VisibilityScope.ALL_BRANCHES } },
+    });
+    expect(invalid).toBe(0);
+  });
+
   it('applies canManageUsers on the next request without changing authVersion', async () => {
     await platformUser();
     const cookie = await loginPlatform();

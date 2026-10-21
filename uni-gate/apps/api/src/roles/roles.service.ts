@@ -81,6 +81,8 @@ export class RolesService {
   async update(companyId: string, roleId: string, input: RoleInput, actorUserId: string): Promise<PlatformRoleDto> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Waits for in-flight user assignments to this role, so the scope check below sees them.
+        await tx.$queryRaw`SELECT id FROM roles WHERE id = ${roleId} AND company_id = ${companyId} FOR UPDATE`;
         const existing = await tx.role.findFirst({
           where: { id: roleId, companyId },
           select: { id: true, visibilityScope: true },
