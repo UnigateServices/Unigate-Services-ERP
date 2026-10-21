@@ -1,0 +1,17 @@
+{
+  "name": "unigate-services-erp",
+  "private": true,
+  "description": "Workspace root — app scripts run in uni-gate/",
+  "scripts": {
+    "dev:web": "npm run dev:web --prefix uni-gate",
+    "dev:api": "npm run dev:api --prefix uni-gate",
+    "build:web": "npm run build:web --prefix uni-gate",
+    "build:api": "npm run build:api --prefix uni-gate",
+    "typecheck:web": "npm run typecheck:web --prefix uni-gate",
+    "typecheck:api": "npm run typecheck:api --prefix uni-gate",
+    "test:api": "npm run test:api --prefix uni-gate",
+    "db:generate": "npm run db:generate --prefix uni-gate",
+    "db:migrate": "npm run db:migrate --prefix uni-gate",
+    "db:seed:dev": "npm run db:seed:dev --prefix uni-gate"
+  }
+}
