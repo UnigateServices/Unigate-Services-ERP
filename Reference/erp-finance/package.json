@@ -1,0 +1,33 @@
+{
+  "name": "unigate-erp-finance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UNI GATE Services ERP — Finance module (NestJS + Next.js + PostgreSQL + Prisma)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:local": "npm run dev",
+    "dev:api": "npm run start:dev -w @unigate/erp-finance-api",
+    "dev:web": "npm run dev -w @unigate/erp-finance-web",
+    "build": "npm run build -w @unigate/erp-finance-api && npm run build -w @unigate/erp-finance-web",
+    "db:generate": "prisma generate --schema packages/database/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema packages/database/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema packages/database/prisma/schema.prisma",
+    "db:seed": "npm run seed -w @unigate/erp-finance-database",
+    "db:backfill:custody": "tsx apps/api/src/scripts/backfill-custody.ts",
+    "test:reconcile": "tsx apps/api/src/finance/reconciliation/treasury-reconciliation.spec.ts",
+    "share:tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/share-tunnel.ps1",
+    "postinstall": "npm run db:generate"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prisma": "^6.16.3"
+  }
+}

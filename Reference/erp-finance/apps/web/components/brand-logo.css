@@ -1,0 +1,47 @@
+.brand-logo {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.brand-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transition: opacity 0.35s ease;
+}
+
+.brand-logo-beige {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+
+[data-theme='dark'] .brand-logo[data-variant='auto'] .brand-logo-green {
+  opacity: 0;
+}
+
+[data-theme='dark'] .brand-logo[data-variant='auto'] .brand-logo-beige {
+  opacity: 1;
+}
+
+.brand-logo[data-variant='beige'] .brand-logo-green {
+  opacity: 0;
+}
+
+.brand-logo[data-variant='beige'] .brand-logo-beige {
+  opacity: 1;
+}
+
+.brand-logo[data-variant='green'] .brand-logo-beige {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-logo img {
+    transition: none;
+  }
+}
