@@ -1,0 +1,101 @@
+.ds-stepper {
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 10px 8px;
+  gap: 0;
+  background: linear-gradient(180deg, rgba(var(--brand-sand-rgb), 0.06), rgba(var(--brand-sand-rgb), 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow-x: hidden;
+}
+
+.ds-step {
+  flex: 1 1 0;
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 0 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ds-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 13px;
+  inset-inline-start: calc(50% + 18px);
+  width: calc(100% - 36px);
+  height: 2px;
+  background: var(--border-color);
+}
+
+.ds-step.is-done:not(:last-child)::after {
+  background: var(--brand-sand);
+}
+
+.ds-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+.ds-label small {
+  display: block;
+  font-size: 10px;
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
+.ds-step.is-done .ds-dot {
+  background: var(--brand-sand);
+  border-color: var(--brand-sand);
+  color: var(--text-on-primary);
+}
+
+.ds-step.is-current {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.ds-step.is-current .ds-dot {
+  border-color: var(--brand-sand);
+  color: var(--brand-sand);
+  box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+.ds-step.is-void-mark {
+  color: var(--accent-red);
+  font-weight: 700;
+  flex: 0 0 auto;
+  min-width: 70px;
+}
+
+.ds-step.is-void-mark .ds-dot {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: #fff;
+}
+
+.ds-stepper.is-void .ds-step.is-idle {
+  opacity: 0.45;
+}
+
+@media print {
+  .ds-stepper {
+    display: none;
+  }
+}

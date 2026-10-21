@@ -1,0 +1,23 @@
+.crm-num { font-variant-numeric: tabular-nums; }
+.crm-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.crm-search { min-width: 240px; flex: 1; max-width: 360px; }
+.crm-board { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.crm-col { min-width: 0; background: var(--surface-2, #f4f5f7); border-radius: 12px; border: 1px solid var(--border, #e3e5e8); display: flex; flex-direction: column; }
+.crm-col-head { padding: 12px; border-bottom: 1px solid var(--border, #e3e5e8); }
+.crm-col-title { display: flex; align-items: center; justify-content: space-between; }
+.crm-col-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.crm-col-sum { margin-top: 6px; font-size: 12px; color: var(--muted, #6b7280); font-variant-numeric: tabular-nums; text-align: right; }
+.crm-col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.crm-col-empty { text-align: center; color: var(--muted, #6b7280); font-size: 13px; margin: 8px 0; }
+.crm-card { background: var(--surface, #fff); border: 1px solid var(--border, #e3e5e8); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.crm-card.is-stale { border-inline-start: 3px solid #d9534f; }
+.crm-card-main { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.crm-card-cust { font-size: 12px; color: var(--muted, #6b7280); }
+.crm-card-amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.crm-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted, #6b7280); font-variant-numeric: tabular-nums; }
+.crm-card-foot { display: flex; flex-direction: column; gap: 6px; }
+.crm-card strong, .crm-card-cust { overflow-wrap: anywhere; }
+.crm-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.crm-form-wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .crm-form { grid-template-columns: 1fr; } }
+.cash-num { font-variant-numeric: tabular-nums; }

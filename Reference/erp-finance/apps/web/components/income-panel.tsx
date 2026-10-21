@@ -1,0 +1,1319 @@
+﻿'use client';
+
+import { Table } from './ui/table';
+
+import { Field, Input } from './ui/field';
+
+import { Button } from './ui/button';
+
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { AttachmentsBox } from './attachments-box';
+import { FileViewer } from './file-viewer';
+import { Modal } from './ui/modal';
+import { DocumentStepper } from './ui/document-stepper';
+import { PrintButton } from './print/print-layout';
+import { CurrencyMark } from './currency-mark';
+import { Card } from './ui/card';
+import { Select } from './ui/select';
+import {
+  AuthUser,
+  CURRENCIES,
+  CurrencyCode,
+  FundsSnapshot,
+  INCOME_FUNDS,
+  IncomeInput,
+  IncomeRow,
+  LocationRow,
+  NamedRecord,
+  ProjectRow,
+  IncomeSearch,
+  attachAfterSave,
+  attachmentCount,
+  createIncome,
+  deleteIncome,
+  getAccountingPolicy,
+  listCurrencies,
+  listIncomes,
+  quoteDailyRate,
+  requestAuditDelete,
+  requestAuditUpdate,
+  updateIncome,
+} from '../lib/api';
+import { clearEdit, peekEdit } from '../lib/edit-handoff';
+import { Dictionary, fill, dictionary } from '../lib/i18n';
+import { promptText } from '../lib/dialogs';
+import { masterErrorMessage } from '../lib/master-errors';
+import { useLang } from '../lib/use-lang';
+type Props = {
+  actor: AuthUser;
+  locations: LocationRow[];
+  projects: ProjectRow[];
+  banks: NamedRecord[];
+  incomes: IncomeRow[];
+  funds?: FundsSnapshot | null;
+  onChanged: () => Promise<void>;
+  part?: 'form' | 'log';
+  embedded?: boolean;
+};
+
+type Toast = { id: number; text: string; tone: 'ok' | 'err' };
+
+function todayIso() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function signedAmount(amount: number, min: number, max: number) {
+  const text = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: max });
+  return amount < 0 ? `(${text})` : text;
+}
+
+function money(value: string | number | null | undefined, currency?: string) {
+  const amount = Number(value || 0);
+  const digits = currency === 'SYP' ? 0 : 2;
+  return signedAmount(amount, digits, digits);
+}
+
+function operationMoney(value: string | number | null | undefined) {
+  return signedAmount(Number(value || 0), 2, 4);
+}
+
+function quantityText(value: string | number | null | undefined) {
+  const amount = Number(value || 0);
+  const text = Math.abs(amount).toLocaleString('en-US', { maximumFractionDigits: 4 });
+  return amount < 0 ? `(${text})` : text;
+}
+
+function fundLabel(fund: string, t: Dictionary['income']) {
+  if (fund === 'SHAM_CASH') return t.fundSham;
+  if (fund === 'BANK') return t.fundBank;
+  if (fund === 'VAULT') return t.fundVault;
+  return fund;
+}
+
+function sectionError(error: unknown, t: Dictionary['income']) {
+  const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: string }).code || '') : '';
+  const map: Record<string, string> = {
+    PROJECT_REQUIRED: t.errProject,
+    PROJECT_NOT_FOR_INCOME: t.errProjectIncome,
+    BANK_REQUIRED: t.errBank,
+    AMOUNT_INVALID: t.errAmount,
+    LOCATION_REQUIRED: t.errOffice,
+    APPROVAL_REQUIRED: t.errApproval,
+    NOT_EDITABLE: t.errEditable,
+    REQUEST_PENDING: t.errPending,
+    REASON_REQUIRED: t.errReason,
+    REQUEST_FAILED: t.errFailed,
+    FILE_TOO_LARGE: t.errFileSize,
+    TOO_MANY_FILES: t.errFileCount,
+    FILE_TYPE: t.errFileType,
+    INCOME_NOT_FOUND: t.errMissing,
+    OP_NOT_FOUND: t.errMissing,
+    FORBIDDEN: t.errForbidden,
+  };
+  return map[code] || masterErrorMessage(error);
+}
+
+function currencyLabel(code: string) {
+  return CURRENCIES.find((item) => item.value === code)?.label || code;
+}
+
+function dateOnly(value: string) {
+  return value.slice(0, 10);
+}
+
+function clockTime(value: string | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function BalanceChips({ rows }: { rows: { currency: CurrencyCode; amount: number }[] }) {
+  const t = dictionary(useLang()).income;
+  if (rows.length === 0) return <span className="ui-bal-empty">{t.noCurrencies}</span>;
+  return (
+    <div className="ui-bal-chips">
+      {rows.map((row) => (
+        <div key={row.currency} className="ui-bal-chip">
+          <span className={`ui-bal-amt${row.amount < 0 ? ' is-neg' : ' is-pos'}`}>{money(row.amount, row.currency)}</span>
+          <CurrencyMark code={row.currency} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function receiptLines(row: IncomeRow, t: Dictionary['income']) {
+  return [
+    [t.opNo, String(row.operationNumber)],
+    [t.colDate, dateOnly(String(row.transactionDate))],
+    [t.project, row.project?.name || '—'],
+    [t.fund, `${fundLabel(row.fund, t)}${row.bank ? ` · ${row.bank.name}` : ''}`],
+    [t.currency, row.currency === 'SYP' ? t.syp : t.usd],
+    [t.quantity, quantityText(row.quantity)],
+    [t.amount, money(row.amount, row.currency)],
+    [t.total, money(row.total, row.currency)],
+    [t.employee, row.employee.name],
+  ];
+}
+
+function receiptText(row: IncomeRow, t: Dictionary['income']) {
+  return ['TRADIVIA', t.receiptLine, ...receiptLines(row, t).map(([label, value]) => `${label}: ${value}`)].join('\n');
+}
+
+function drawReceipt(row: IncomeRow, t: Dictionary['income']) {
+  const lines = receiptLines(row, t);
+  const width = 640;
+  const height = 148 + lines.length * 42;
+  const canvas = document.createElement('canvas');
+  canvas.width = width * 2;
+  canvas.height = height * 2;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.scale(2, 2);
+  ctx.fillStyle = '#f6f1e4';
+  ctx.fillRect(0, 0, width, height);
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#1d3b31';
+  ctx.font = '800 26px Tahoma, "Segoe UI", sans-serif';
+  ctx.fillText('TRADIVIA', width - 32, 48);
+  ctx.font = '700 16px Tahoma, "Segoe UI", sans-serif';
+  ctx.fillText(`${t.receiptLine} · ${t.opNo} ${row.operationNumber}`, width - 32, 78);
+  ctx.strokeStyle = '#d7cbb3';
+  ctx.beginPath();
+  ctx.moveTo(32, 98);
+  ctx.lineTo(width - 32, 98);
+  ctx.stroke();
+  lines.forEach(([label, value], index) => {
+    const y = 136 + index * 42;
+    ctx.font = '700 15px Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#6d6456';
+    ctx.textAlign = 'right';
+    ctx.fillText(label, width - 32, y);
+    ctx.font = '800 16px Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#1d3b31';
+    ctx.textAlign = 'left';
+    ctx.direction = 'ltr';
+    ctx.fillText(value, 32, y);
+    ctx.direction = 'rtl';
+  });
+  return canvas;
+}
+
+function namesIn(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, 'ar'));
+}
+
+function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function jpegPdf(jpeg: Uint8Array, width: number, height: number) {
+  const pageW = 420;
+  const pageH = Math.max(200, Math.round((pageW * height) / width));
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [encoder.encode('%PDF-1.4\n')];
+  const offsets = [0];
+  let cursor = chunks[0].length;
+
+  function add(body: string | Uint8Array) {
+    offsets.push(cursor);
+    const bytes = typeof body === 'string' ? encoder.encode(body) : body;
+    chunks.push(bytes);
+    cursor += bytes.length;
+  }
+
+  add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  add('2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n');
+  add(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
+  const imageHead = encoder.encode(
+    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+  );
+  const imageTail = encoder.encode('\nendstream\nendobj\n');
+  offsets.push(cursor);
+  chunks.push(imageHead, jpeg, imageTail);
+  cursor += imageHead.length + jpeg.length + imageTail.length;
+  const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im1 Do\nQ\n`;
+  add(`5 0 obj\n<< /Length ${encoder.encode(content).length} >>\nstream\n${content}endstream\nendobj\n`);
+  const xrefStart = cursor;
+  let xref = 'xref\n0 6\n0000000000 65535 f \n';
+  for (let index = 1; index <= 5; index += 1) xref += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  xref += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  chunks.push(encoder.encode(xref));
+  return new Blob(chunks.map((chunk) => new Uint8Array(chunk)), { type: 'application/pdf' });
+}
+
+async function receiptImage(row: IncomeRow, t: Dictionary['income']) {
+  const canvas = drawReceipt(row, t);
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((file) => (file ? resolve(file) : reject(new Error('image'))), 'image/png');
+  });
+  return { canvas, blob };
+}
+
+function ReceiptSheet({ row, onClose }: { row: IncomeRow; onClose: () => void }) {
+  const t = dictionary(useLang()).income;
+  const [menu, setMenu] = useState<'wa' | null>(null);
+  const fileBase = `tradivia-income-${row.operationNumber}`;
+
+  async function savePdf() {
+    const { canvas } = await receiptImage(row, t);
+    const jpeg = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((file) => (file ? resolve(file) : reject(new Error('jpeg'))), 'image/jpeg', 0.92);
+    });
+    downloadBlob(jpegPdf(new Uint8Array(await jpeg.arrayBuffer()), canvas.width, canvas.height), `${fileBase}.pdf`);
+    setMenu(null);
+  }
+
+  function sendText() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(receiptText(row, t))}`, '_blank', 'noopener,noreferrer');
+    setMenu(null);
+  }
+
+  async function sendImage() {
+    const text = receiptText(row, t);
+    const { blob } = await receiptImage(row, t);
+    const file = new File([blob], `${fileBase}.png`, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], text });
+    } else {
+      downloadBlob(blob, `${fileBase}.png`);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    }
+    setMenu(null);
+  }
+
+  return (
+    <Modal
+      title="TRADIVIA"
+      onClose={onClose}
+      closeLabel={t.close}
+      className="receipt-sheet"
+      footer={
+        <>
+          <Button variant="secondary" className="receipt-choice is-save" type="button" onClick={() => void savePdf()}>{t.asPdf}</Button>
+          <div className="ui-wa-group">
+            <Button variant="primary" className="receipt-choice is-wa" type="button" onClick={() => setMenu(menu === 'wa' ? null : 'wa')}>{t.wa}</Button>
+            {menu === 'wa' ? (
+              <div className="ui-wa-picks" role="menu">
+                <Button variant="secondary" type="button" onClick={() => void sendImage()}>{t.asImage}</Button>
+                <Button variant="secondary" type="button" onClick={sendText}>{t.asText}</Button>
+              </div>
+            ) : null}
+          </div>
+          <PrintButton className="receipt-choice is-print" label={t.print} getDoc={() => ({ title: 'سند قبض', number: String(row.operationNumber), date: dateOnly(String(row.transactionDate)), currency: row.currency, total: String(row.total), status: row.status, partyLabel: 'المستلم منه', partyName: row.sender, officeName: row.location?.name, meta: [[t.project, row.project?.name || '—']], notes: row.description || row.notes, journalRef: row.reference || undefined, lines: [{ name: row.description || 'سند قبض', quantity: row.quantity ? String(row.quantity) : undefined, unitPrice: String(row.amount), total: String(row.total) }] })} />
+        </>
+      }
+    >
+        <DocumentStepper stage="POSTED" />
+        <div className="receipt-brand">
+          <span>{t.receiptLine} · {t.opNo} {row.operationNumber}</span>
+        </div>
+        <dl className="receipt-lines">
+          <div><dt>{t.colDate}</dt><dd>{dateOnly(String(row.transactionDate))}</dd></div>
+          <div><dt>{t.project}</dt><dd>{row.project?.name || '—'}</dd></div>
+          <div><dt>{t.fund}</dt><dd>{fundLabel(row.fund, t)}{row.bank ? ` · ${row.bank.name}` : ''}</dd></div>
+          <div><dt>{t.currency}</dt><dd><CurrencyMark code={row.currency} /></dd></div>
+          <div><dt>{t.quantity}</dt><dd className={Number(row.quantity) < 0 ? 'is-neg' : undefined}>{quantityText(row.quantity)}</dd></div>
+          <div><dt>{t.amount}</dt><dd className={Number(row.amount) < 0 ? 'is-neg' : undefined}>{money(row.amount, row.currency)}</dd></div>
+          <div><dt>{t.total}</dt><dd className={Number(row.total) < 0 ? 'is-neg' : undefined}>{money(row.total, row.currency)}</dd></div>
+          <div><dt>{t.employee}</dt><dd>{row.employee.name}</dd></div>
+        </dl>
+    </Modal>
+  );
+}
+
+export function IncomePanel({ actor, locations, projects, banks, incomes, funds, onChanged, part = 'form', embedded = false }: Props) {
+  const t = dictionary(useLang()).income;
+  const isManager = actor.role === 'GENERAL_MANAGER';
+  const isEmployee = actor.role === 'EMPLOYEE';
+  const formRef = useRef<HTMLFormElement>(null);
+  const [editing, setEditing] = useState<IncomeRow | null>(null);
+
+  const incomeProjects = useMemo(() => {
+    const list = projects.filter((row) => row.status === 'ACTIVE' && row.showIn.includes('INCOME'));
+    if (editing?.project && !list.some((row) => row.id === editing.project?.id)) {
+      return [
+        { id: editing.project.id, name: editing.project.name, status: 'ACTIVE' as const, showIn: ['INCOME'] },
+        ...list,
+      ];
+    }
+    return list;
+  }, [projects, editing]);
+  const activeBanks = useMemo(() => {
+    const list = banks.filter((row) => row.status === 'ACTIVE');
+    if (editing?.bank && !list.some((row) => row.id === editing.bank?.id)) {
+      return [{ id: editing.bank.id, name: editing.bank.name, status: 'ACTIVE' as const }, ...list];
+    }
+    return list;
+  }, [banks, editing]);
+  const activeLocations = useMemo(
+    () => locations.filter((row) => row.status === 'ACTIVE'),
+    [locations],
+  );
+
+  const [transactionDate, setTransactionDate] = useState(todayIso());
+  const [locationId, setLocationId] = useState(activeLocations[0]?.id || actor.locationId || '');
+  const [projectId, setProjectId] = useState(incomeProjects[0]?.id || '');
+  const [description, setDescription] = useState('');
+  const [fund, setFund] = useState<(typeof INCOME_FUNDS)[number]['value']>('VAULT');
+  const [bankId, setBankId] = useState(activeBanks[0]?.id || '');
+  const [sender, setSender] = useState('');
+  const [receiver, setReceiver] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [functional, setFunctional] = useState('USD');
+  const [currencyOptions, setCurrencyOptions] = useState<{ value: string; label: string }[]>(
+    CURRENCIES.map((item) => ({ value: item.value, label: item.label })),
+  );
+  const [fxRate, setFxRate] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastSeq = useRef(0);
+
+  useEffect(() => {
+    listCurrencies()
+      .then((rows) => {
+        const active = rows.filter((row) => row.active);
+        if (active.length) {
+          setCurrencyOptions(active.map((row) => ({ value: row.code, label: `${row.name} — ${row.code}` })));
+        }
+      })
+      .catch(() => undefined);
+    getAccountingPolicy()
+      .then((policy) => setFunctional(policy.functionalCurrency))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (currency === functional) {
+      setFxRate('');
+      return;
+    }
+    let cancel = false;
+    quoteDailyRate(currency, transactionDate)
+      .then((quote) => {
+        if (!cancel && quote.rate != null) setFxRate(String(quote.rate));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [currency, transactionDate, functional]);
+
+  function pushToast(text: string, tone: 'ok' | 'err') {
+    const id = toastSeq.current + 1;
+    toastSeq.current = id;
+    setToasts((list) => [...list, { id, text, tone }]);
+    window.setTimeout(() => {
+      setToasts((list) => list.filter((item) => item.id !== id));
+    }, 3200);
+  }
+  const [saving, setSaving] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<IncomeRow | null>(null);
+  const [loaded, setLoaded] = useState<IncomeRow[]>([]);
+  const [loadingLog, setLoadingLog] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [customSearch, setCustomSearch] = useState(false);
+  const [editReason, setEditReason] = useState('');
+  const [deleteRow, setDeleteRow] = useState<IncomeRow | null>(null);
+  const [cancelChoice, setCancelChoice] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [filesRow, setFilesRow] = useState<IncomeRow | null>(null);
+  const searchRef = useRef<IncomeSearch>({ from: todayIso(), to: todayIso() });
+  const [dbFrom, setDbFrom] = useState(todayIso());
+  const [dbTo, setDbTo] = useState(todayIso());
+  const [dbFund, setDbFund] = useState('');
+  const [dbCurrency, setDbCurrency] = useState('');
+  const [dbStatus, setDbStatus] = useState('');
+  const [dbProject, setDbProject] = useState('');
+  const [dbBank, setDbBank] = useState('');
+  const [dbSender, setDbSender] = useState('');
+  const [dbReceiver, setDbReceiver] = useState('');
+  const [dbDescription, setDbDescription] = useState('');
+  const [dbNotes, setDbNotes] = useState('');
+  const [dbOperation, setDbOperation] = useState('');
+  const [dbMin, setDbMin] = useState('');
+  const [dbMax, setDbMax] = useState('');
+  const [fundFilter, setFundFilter] = useState('');
+  const [currencyFilter, setCurrencyFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
+  const [bankFilter, setBankFilter] = useState('');
+  const [senderFilter, setSenderFilter] = useState('');
+  const [receiverFilter, setReceiverFilter] = useState('');
+  const [fileFilter, setFileFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState<'new' | 'old'>('new');
+  const [query, setQuery] = useState('');
+  const [viewing, setViewing] = useState<IncomeRow | null>(null);
+
+  useEffect(() => {
+    if (!editing && !projectId && incomeProjects[0]) setProjectId(incomeProjects[0].id);
+  }, [incomeProjects, projectId, editing]);
+
+  useEffect(() => {
+    if (!editing && !bankId && activeBanks[0]) setBankId(activeBanks[0].id);
+  }, [activeBanks, bankId, editing]);
+
+  useEffect(() => {
+    if (!editing && isManager && !locationId && activeLocations[0]) setLocationId(activeLocations[0].id);
+  }, [isManager, activeLocations, locationId, editing]);
+
+  const nextOperationNumber = useMemo(() => {
+    const mine = incomes.filter((row) => row.employee.id === actor.id);
+    return mine.reduce((max, row) => Math.max(max, row.operationNumber), 0) + 1;
+  }, [incomes, actor.id]);
+
+  useEffect(() => {
+    if (lastReceipt) {
+      if (lastReceipt.employee.id !== actor.id) {
+        setLastReceipt(null);
+        return;
+      }
+      const fresh = incomes.find((row) => row.id === lastReceipt.id);
+      if (fresh && fresh !== lastReceipt) setLastReceipt(fresh);
+      return;
+    }
+    const newest = incomes.reduce<IncomeRow | null>((best, row) => {
+      if (row.employee.id !== actor.id) return best;
+      if (!best || row.operationNumber > best.operationNumber) return row;
+      return best;
+    }, null);
+    if (newest) setLastReceipt(newest);
+  }, [incomes, lastReceipt]);
+
+  const qtyNum = Number(quantity) || 0;
+  const amountNum = Number(amount) || 0;
+  const total = qtyNum > 0 ? qtyNum * amountNum : amountNum;
+  const snapshot: FundsSnapshot = funds || { vault: [], sham: [], banks: [], custody: [] };
+
+  const visible = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    const rows = loaded.filter((row) => {
+      if (fundFilter && row.fund !== fundFilter) return false;
+      if (currencyFilter && row.currency !== currencyFilter) return false;
+      if (statusFilter && row.status !== statusFilter) return false;
+      if (projectFilter && row.project?.id !== projectFilter) return false;
+      if (bankFilter && (row.bank?.name || '') !== bankFilter) return false;
+      if (senderFilter && (row.sender || '') !== senderFilter) return false;
+      if (receiverFilter && (row.receiver || '') !== receiverFilter) return false;
+      const files = attachmentCount(row.attachments);
+      if (fileFilter === 'yes' && files === 0) return false;
+      if (fileFilter === 'no' && files > 0) return false;
+      if (!text) return true;
+      const haystack = [
+        String(row.operationNumber),
+        row.project?.name,
+        row.bank?.name,
+        row.description,
+        row.sender,
+        row.receiver,
+        row.notes,
+        row.employee.name,
+        row.location?.name,
+        fundLabel(row.fund, t),
+        currencyLabel(row.currency),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(text);
+    });
+    rows.sort((a, b) => {
+      const byDate = dateOnly(String(a.transactionDate)).localeCompare(dateOnly(String(b.transactionDate)));
+      const byNumber = a.operationNumber - b.operationNumber;
+      const delta = byDate || byNumber;
+      return sortOrder === 'new' ? -delta : delta;
+    });
+    return rows;
+  }, [loaded, fundFilter, currencyFilter, statusFilter, projectFilter, bankFilter, senderFilter, receiverFilter, fileFilter, sortOrder, query, t]);
+
+  const logBanks = useMemo(() => namesIn(loaded.map((row) => row.bank?.name)), [loaded]);
+  const logSenders = useMemo(() => namesIn(loaded.map((row) => row.sender)), [loaded]);
+  const logReceivers = useMemo(() => namesIn(loaded.map((row) => row.receiver)), [loaded]);
+  const displayFiltersOn = Boolean(
+    fundFilter || currencyFilter || statusFilter || projectFilter || bankFilter || senderFilter.trim() || receiverFilter.trim() || fileFilter || query || sortOrder !== 'new',
+  );
+
+  function clearDisplayFilters() {
+    setFundFilter('');
+    setCurrencyFilter('');
+    setStatusFilter('');
+    setProjectFilter('');
+    setBankFilter('');
+    setSenderFilter('');
+    setReceiverFilter('');
+    setFileFilter('');
+    setSortOrder('new');
+    setQuery('');
+  }
+
+  async function loadLog(search: IncomeSearch) {
+    searchRef.current = search;
+    setLoadingLog(true);
+    try {
+      setLoaded(await listIncomes(search));
+    } catch (error) {
+      pushToast(sectionError(error, t), 'err');
+    } finally {
+      setLoadingLog(false);
+    }
+  }
+
+  function runSearch(event?: FormEvent) {
+    event?.preventDefault();
+    setAdvancedOpen(false);
+    const day = todayIso();
+    const untouched =
+      dbFrom === day &&
+      dbTo === day &&
+      !dbFund &&
+      !dbCurrency &&
+      !dbStatus &&
+      !dbProject &&
+      !dbBank &&
+      !dbSender.trim() &&
+      !dbReceiver.trim() &&
+      !dbDescription.trim() &&
+      !dbNotes.trim() &&
+      !dbOperation.trim() &&
+      !dbMin.trim() &&
+      !dbMax.trim();
+    setCustomSearch(!untouched);
+    void loadLog({
+      from: dbFrom,
+      to: dbTo,
+      fund: dbFund,
+      currency: dbCurrency,
+      status: dbStatus,
+      projectId: dbProject,
+      bankId: dbBank,
+      sender: dbSender,
+      receiver: dbReceiver,
+      description: dbDescription,
+      notes: dbNotes,
+      operationNumber: dbOperation,
+      minTotal: dbMin,
+      maxTotal: dbMax,
+    });
+  }
+
+  function showToday() {
+    const day = todayIso();
+    setAdvancedOpen(false);
+    setCustomSearch(false);
+    setDbFrom(day);
+    setDbTo(day);
+    setDbFund('');
+    setDbCurrency('');
+    setDbStatus('');
+    setDbProject('');
+    setDbBank('');
+    setDbSender('');
+    setDbReceiver('');
+    setDbDescription('');
+    setDbNotes('');
+    setDbOperation('');
+    setDbMin('');
+    setDbMax('');
+    clearDisplayFilters();
+    void loadLog({ from: day, to: day });
+  }
+
+  useEffect(() => {
+    if (part !== 'log') return;
+    void loadLog(searchRef.current);
+  }, [part, incomes]);
+
+  function payload(): IncomeInput {
+    return {
+      transactionDate,
+      projectId,
+      description,
+      fund,
+      bankId: fund === 'BANK' ? bankId : undefined,
+      sender,
+      receiver,
+      currency: currency as CurrencyCode,
+      quantity: qtyNum > 0 ? qtyNum : 1,
+      amount: amountNum,
+      notes,
+      locationId: isManager ? locationId : undefined,
+    };
+  }
+
+  function resetForm() {
+    setEditing(null);
+    setTransactionDate(todayIso());
+    setDescription('');
+    setSender('');
+    setReceiver('');
+    setAmount('');
+    setNotes('');
+    setQuantity('1');
+    setFund('VAULT');
+    setCurrency('USD');
+    setFxRate('');
+    setPendingFiles([]);
+    if (incomeProjects[0]) setProjectId(incomeProjects[0].id);
+    if (activeBanks[0]) setBankId(activeBanks[0].id);
+  }
+
+  function startEdit(row: IncomeRow) {
+    setEditing(row);
+    setTransactionDate(dateOnly(String(row.transactionDate)));
+    setLocationId(row.location?.id || actor.locationId || locationId);
+    setProjectId(row.project?.id || '');
+    setDescription(row.description || '');
+    setFund((row.fund === 'BANK' || row.fund === 'SHAM_CASH' ? row.fund : 'VAULT') as typeof fund);
+    setBankId(row.bank?.id || activeBanks[0]?.id || '');
+    setSender(row.sender || '');
+    setReceiver(row.receiver || '');
+    setCurrency(row.currency);
+    setFxRate(row.fxRate ? String(Number(row.fxRate)) : '');
+    setQuantity(String(Number(row.quantity || 1)));
+    setAmount(String(Number(row.amount)));
+    setNotes(row.notes || '');
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  useEffect(() => {
+    if (part === 'log') return;
+    const id = peekEdit('income');
+    if (!id) return;
+    const row = incomes.find((item) => item.id === id);
+    if (!row) return;
+    clearEdit();
+    startEdit(row);
+  }, [incomes, part]);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const body = payload();
+      if (editing) {
+        const reason = await promptText({
+          title: 'سبب التعديل',
+          message: fill(actor.role === 'GENERAL_MANAGER' ? t.reasonUpdate : t.reasonEditOpt, { ref: editing.operationNumber }),
+          required: true,
+          confirmLabel: 'متابعة',
+        });
+        if (reason === null) return;
+        if (actor.role === 'GENERAL_MANAGER') {
+          const updated = await updateIncome(editing.id, body, reason);
+          await attachAfterSave(editing.reference, pendingFiles);
+          setLastReceipt(updated);
+          pushToast(fill(t.updated, { ref: editing.operationNumber }), 'ok');
+        } else {
+          await requestAuditUpdate(editing.reference, body, reason);
+          await attachAfterSave(editing.reference, pendingFiles);
+          pushToast(fill(actor.role === 'SUPERVISOR' ? t.editSentManager : t.editSent, { ref: editing.operationNumber }), 'ok');
+        }
+        resetForm();
+      } else {
+        const row = await createIncome(body);
+        await attachAfterSave(row.reference, pendingFiles);
+        resetForm();
+        setLastReceipt(row);
+        pushToast(fill(t.saved, { ref: row.reference, n: row.operationNumber }), 'ok');
+      }
+      await onChanged();
+    } catch (error) {
+      pushToast(sectionError(error, t), 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    const reason = editReason.trim();
+    if (!reason) {
+      pushToast(t.reasonRequired, 'err');
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = payload();
+      if (actor.role === 'GENERAL_MANAGER') {
+        const updated = await updateIncome(editing.id, body, reason);
+        await attachAfterSave(editing.reference, pendingFiles);
+        setLastReceipt(updated);
+        pushToast(fill(t.updated, { ref: editing.operationNumber }), 'ok');
+      } else {
+        await requestAuditUpdate(editing.reference, body, reason);
+        await attachAfterSave(editing.reference, pendingFiles);
+        pushToast(fill(actor.role === 'SUPERVISOR' ? t.editSentManager : t.editSent, { ref: editing.operationNumber }), 'ok');
+      }
+      resetForm();
+      setEditReason('');
+      await onChanged();
+    } catch (error) {
+      pushToast(sectionError(error, t), 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteRow) return;
+    const reason = (cancelChoice === 'other' ? deleteReason : cancelChoice).trim();
+    if (!reason) {
+      pushToast(t.reasonRequired, 'err');
+      return;
+    }
+    try {
+      if (actor.role === 'GENERAL_MANAGER') {
+        await deleteIncome(deleteRow.id, reason);
+        pushToast(t.deleted, 'ok');
+      } else {
+        await requestAuditDelete(deleteRow.reference, reason);
+        pushToast(fill(actor.role === 'SUPERVISOR' ? t.deleteSentManager : t.deleteSent, { ref: deleteRow.operationNumber }), 'ok');
+      }
+      setDeleteRow(null);
+      setDeleteReason('');
+      await onChanged();
+    } catch (error) {
+      pushToast(sectionError(error, t), 'err');
+    }
+  }
+
+  return (
+    <div className={`ui-page${embedded ? ' is-embedded' : ''}`}>
+      {part === 'form' ? (
+      <>
+      {embedded ? null : <div className="ui-bal-grid">
+        <Card title={t.vault} chip={t.box} collapsible>
+          <BalanceChips rows={snapshot.vault} />
+        </Card>
+        <Card title={t.sham} chip={t.app} collapsible>
+          <BalanceChips rows={snapshot.sham} />
+        </Card>
+        <Card title={t.banks} chip={t.accounts} className="ui-span" collapsible>
+          {snapshot.banks.length === 0 ? (
+            <span className="ui-bal-empty">{t.noBankAccounts}</span>
+          ) : (
+            <div className="ui-named-bals">
+              {snapshot.banks.map((row) => (
+                <div key={row.id} className="ui-named-bal">
+                  <div className="ui-named-bal-title">{row.name}</div>
+                  <BalanceChips rows={row.balances} />
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>}
+
+      <Card
+        title={editing ? (isEmployee ? t.editRequest : t.edit) : t.newOp}
+        badge={`${t.opNo} ${editing ? editing.operationNumber : nextOperationNumber}`}
+        collapsible
+        toolbar={
+          <>
+            <span className="ui-toolbar-group">
+              <Button
+                variant="tool"
+                className={pendingFiles.length || (editing && attachmentCount(editing.attachments)) ? 'is-on' : ''}
+                type="button"
+                onClick={() => setAttachOpen(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                {t.attach}
+              </Button>
+              {pendingFiles.length || (editing && attachmentCount(editing.attachments)) ? (
+                <span className="ui-attach-ok">{t.attached}</span>
+              ) : null}
+              <Button variant="tool" className="ui-last-receipt-btn" type="button" onClick={() => (lastReceipt ? setReceiptOpen(true) : pushToast(t.noReceipt, 'err'))}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              {t.lastReceipt}
+              {lastReceipt ? <span className="ui-last-receipt-num">#{lastReceipt.operationNumber}</span> : null}
+            </Button>
+            </span>
+            <span className="ui-date">{transactionDate}</span>
+          </>
+        }
+      >
+        {incomeProjects.length === 0 ? (
+          <p className="ui-log-empty">{t.noProject}</p>
+        ) : (
+          <form ref={formRef} onSubmit={onSubmit}>
+            <div className="ui-form-grid">
+              {isManager ? (
+                <Field label={t.office}>
+                  <Select
+                    value={locationId}
+                    disabled={Boolean(editing)}
+                    onChange={setLocationId}
+                    options={activeLocations.map((row) => ({ value: row.id, label: row.name }))}
+                  />
+                </Field>
+              ) : null}
+              <Field label={t.txDate}>
+                <Input
+                  
+                  required
+                  type="date"
+                  value={transactionDate}
+                  onChange={(event) => setTransactionDate(event.target.value)}
+                />
+              </Field>
+              <Field label={t.fund}>
+                <Select
+                  value={fund}
+                  onChange={(next) => setFund(next as (typeof INCOME_FUNDS)[number]['value'])}
+                  options={[
+                    { value: 'VAULT', label: t.fundVault },
+                    { value: 'SHAM_CASH', label: t.fundSham },
+                    { value: 'BANK', label: t.fundBank },
+                  ]}
+                />
+              </Field>
+              {fund === 'BANK' ? (
+                <Field label={t.bank}>
+                  <Select
+                    value={bankId}
+                    placeholder={t.noBanks}
+                    onChange={setBankId}
+                    options={activeBanks.map((row) => ({ value: row.id, label: row.name }))}
+                  />
+                </Field>
+              ) : null}
+              <Field label={t.project}>
+                <Select
+                  value={projectId}
+                  onChange={setProjectId}
+                  options={incomeProjects.map((row) => ({ value: row.id, label: row.name }))}
+                />
+              </Field>
+              <Field label={t.description}>
+                <Input  value={description} onChange={(event) => setDescription(event.target.value)} />
+              </Field>
+              <Field label={t.sender}>
+                <Input  value={sender} onChange={(event) => setSender(event.target.value)} />
+              </Field>
+              <Field label={t.receiver}>
+                <Input  value={receiver} onChange={(event) => setReceiver(event.target.value)} />
+              </Field>
+              <Field label={t.currency}>
+                <Select value={currency} onChange={setCurrency} options={currencyOptions} />
+              </Field>
+              {currency !== functional ? (
+                <Field label="سعر الصرف (سعر اليوم)" hint="يُجلب تلقائياً من أسعار الصرف اليومية لأغراض التدقيق">
+                  <Input
+                    inputMode="decimal"
+                    value={fxRate}
+                    placeholder="سعر اليوم"
+                    disabled
+                    readOnly
+                  />
+                </Field>
+              ) : null}
+              <Field label={t.quantity}>
+                <Input
+                   className="input-amount"
+                  required
+                  inputMode="decimal"
+                  value={quantity}
+                  onChange={(event) => setQuantity(event.target.value)}
+                />
+              </Field>
+              <Field label={t.amount}>
+                <Input
+                   className="input-amount"
+                  required
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                />
+              </Field>
+              <Field label={t.notes}>
+                <Input  placeholder="..." value={notes} onChange={(event) => setNotes(event.target.value)} />
+              </Field>
+            </div>
+            <div className="ui-action-row">
+              <div className="ui-total-box">
+                <div className="ui-total-label">{t.total}</div>
+                <div className="ui-total-value">
+                  <span>{total > 0 ? operationMoney(total) : '0.00'}</span>
+                  <CurrencyMark code={currency} />
+                </div>
+              </div>
+              <div className="ui-submit-stack">
+                <Button variant="submit" type="submit" disabled={saving || (fund === 'BANK' && !bankId)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  {editing && isEmployee ? t.sendEdit : t.save}
+                </Button>
+                {editing ? (
+                  <Button variant="soft" type="button" onClick={() => resetForm()}>
+                    {t.cancel}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </form>
+        )}
+      </Card>
+
+      {attachOpen ? (
+        <div className="attach-modal-backdrop" onClick={() => setAttachOpen(false)}>
+          <div className="attach-modal" role="dialog" aria-modal="true" aria-label={t.attachTitle} onClick={(event) => event.stopPropagation()}>
+            <div className="attach-modal-head">
+              <strong>{t.attachTitle}</strong>
+              <Button variant="ghost" className="paper-x" type="button" onClick={() => setAttachOpen(false)} aria-label={t.close}>×</Button>
+            </div>
+            <AttachmentsBox
+              reference={editing?.reference}
+              pendingFiles={pendingFiles}
+              onPendingFiles={setPendingFiles}
+              disabled={saving}
+              hint={t.drop}
+              pendingLabel={t.pendingSave}
+              removeLabel={t.removeFile}
+              uploadLabel={t.uploadNow}
+              uploadingLabel={t.uploading}
+            />
+          </div>
+        </div>
+      ) : null}
+      {receiptOpen && lastReceipt ? <ReceiptSheet row={lastReceipt} onClose={() => setReceiptOpen(false)} /> : null}
+      </>
+      ) : (
+      <Card title={t.log}>
+        <div className="ui-log-tools">
+          <Button variant="ghost" className="ui-log-advanced-toggle" type="button" onClick={() => setAdvancedOpen(true)}>
+            <span>{t.advancedSearch}</span>
+          </Button>
+          {customSearch ? (
+            <Button variant="ghost" className="ui-log-advanced-toggle" type="button" onClick={showToday}>{t.resetSearch}</Button>
+          ) : null}
+          <Button variant="ghost" className="ui-log-advanced-toggle" type="button" onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen}>
+            <span>{t.filter}</span>
+            <span aria-hidden="true">{filtersOpen ? '▴' : '▾'}</span>
+          </Button>
+          {displayFiltersOn ? (
+            <Button variant="ghost" className="ui-log-clear" type="button" onClick={clearDisplayFilters}>{t.clearFilters}</Button>
+          ) : null}
+        </div>
+        {advancedOpen ? (
+          <Modal title={t.advancedSearch} onClose={() => setAdvancedOpen(false)} closeLabel={t.close} wide>
+          <form className="ui-search-modal" onSubmit={runSearch}>
+            <Field label={t.fromDate}>
+              <Input  type="date" value={dbFrom} onChange={(event) => setDbFrom(event.target.value)} />
+            </Field>
+            <Field label={t.toDate}>
+              <Input  type="date" value={dbTo} onChange={(event) => setDbTo(event.target.value)} />
+            </Field>
+            <Field label={t.fund}>
+              <Select value={dbFund} onChange={setDbFund} options={[{ value: '', label: t.all }, ...INCOME_FUNDS.map((item) => ({ value: item.value, label: fundLabel(item.value, t) }))]} />
+            </Field>
+            <Field label={t.bank}>
+              <Select value={dbBank} onChange={setDbBank} options={[{ value: '', label: t.all }, ...banks.map((row) => ({ value: row.id, label: row.name }))]} />
+            </Field>
+            <Field label={t.project}>
+              <Select value={dbProject} onChange={setDbProject} options={[{ value: '', label: t.all }, ...projects.map((row) => ({ value: row.id, label: row.name }))]} />
+            </Field>
+            <Field label={t.currency}>
+              <Select value={dbCurrency} onChange={setDbCurrency} options={[{ value: '', label: t.all }, ...CURRENCIES.map((item) => ({ value: item.value, label: <CurrencyMark code={item.value} /> }))]} />
+            </Field>
+            <Field label={t.status}>
+              <Select value={dbStatus} onChange={setDbStatus} options={[{ value: '', label: t.all }, { value: 'COMPLETED', label: t.completed }, { value: 'PENDING_APPROVAL', label: t.pending }]} />
+            </Field>
+            <Field label={t.sender}>
+              <Input  value={dbSender} onChange={(event) => setDbSender(event.target.value)} />
+            </Field>
+            <Field label={t.receiver}>
+              <Input  value={dbReceiver} onChange={(event) => setDbReceiver(event.target.value)} />
+            </Field>
+            <Field label={t.description}>
+              <Input  value={dbDescription} onChange={(event) => setDbDescription(event.target.value)} />
+            </Field>
+            <Field label={t.notes}>
+              <Input  value={dbNotes} onChange={(event) => setDbNotes(event.target.value)} />
+            </Field>
+            <Field label={t.opNo}>
+              <Input  inputMode="numeric" value={dbOperation} onChange={(event) => setDbOperation(event.target.value)} />
+            </Field>
+            <Field label={t.rangeFrom}>
+              <Input  inputMode="decimal" placeholder="0" value={dbMin} onChange={(event) => setDbMin(event.target.value)} />
+            </Field>
+            <Field label={t.rangeTo}>
+              <Input  inputMode="decimal" placeholder="0" value={dbMax} onChange={(event) => setDbMax(event.target.value)} />
+            </Field>
+            <div className="ui-log-search-actions">
+              <Button variant="primary" type="submit" disabled={loadingLog}>{loadingLog ? t.searching : t.runSearch}</Button>
+            </div>
+          </form>
+          </Modal>
+        ) : null}
+
+        <div className={`ui-log-collapse${filtersOpen ? ' is-open' : ''}`}>
+        <div className="ui-log-collapse-inner">
+        <div className="ui-log-quick is-register">
+          <Field label={t.order}>
+            <Select value={sortOrder} onChange={(next) => setSortOrder(next as 'new' | 'old')} options={[{ value: 'new', label: t.newest }, { value: 'old', label: t.oldest }]} />
+          </Field>
+          <Field label={t.fund}>
+            <Select value={fundFilter} onChange={setFundFilter} options={[{ value: '', label: t.all }, ...INCOME_FUNDS.map((item) => ({ value: item.value, label: fundLabel(item.value, t) }))]} />
+          </Field>
+          <Field label={t.currency}>
+            <Select value={currencyFilter} onChange={setCurrencyFilter} options={[{ value: '', label: t.all }, ...CURRENCIES.map((item) => ({ value: item.value, label: <CurrencyMark code={item.value} /> }))]} />
+          </Field>
+          <Field label={t.project}>
+            <Select value={projectFilter} onChange={setProjectFilter} options={[{ value: '', label: t.all }, ...projects.map((row) => ({ value: row.id, label: row.name }))]} />
+          </Field>
+          <Field label={t.status}>
+            <Select value={statusFilter} onChange={setStatusFilter} options={[{ value: '', label: t.all }, { value: 'COMPLETED', label: t.completed }, { value: 'PENDING_APPROVAL', label: t.pending }]} />
+          </Field>
+          {logBanks.length > 0 ? (
+            <Field label={t.bank}>
+              <Select value={bankFilter} onChange={setBankFilter} options={[{ value: '', label: t.all }, ...logBanks.map((name) => ({ value: name, label: name }))]} />
+            </Field>
+          ) : null}
+          <Field label={t.sender}>
+            <Select value={senderFilter} onChange={setSenderFilter} options={[{ value: '', label: t.all }, ...logSenders.map((name) => ({ value: name, label: name }))]} />
+          </Field>
+          <Field label={t.receiver}>
+            <Select value={receiverFilter} onChange={setReceiverFilter} options={[{ value: '', label: t.all }, ...logReceivers.map((name) => ({ value: name, label: name }))]} />
+          </Field>
+          <Field label={t.colAttach}>
+            <Select value={fileFilter} onChange={setFileFilter} options={[{ value: '', label: t.all }, { value: 'yes', label: t.hasFiles }, { value: 'no', label: t.noFiles }]} />
+          </Field>
+        </div>
+        </div>
+        </div>
+        <div className="ui-log-live-search">
+          <input className="form-control" value={query} placeholder={t.searchPh} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <div className="ui-log-count-line">{loadingLog ? t.searching : fill(t.shownCount, { n: visible.length })}</div>
+        {visible.length === 0 ? (
+          <p className="ui-log-empty">{loaded.length === 0 ? t.emptyRange : t.noResults}</p>
+        ) : (
+          <Table dense>
+              <thead>
+                <tr>
+                  <th>{t.opNo}</th>
+                  <th>{t.colDate}</th>
+                  <th>{t.colProject}</th>
+                  <th>{t.colFund}</th>
+                  <th>{t.currency}</th>
+                  <th>{t.quantity}</th>
+                  <th>{t.amount}</th>
+                  <th>{t.total}</th>
+                  <th>{t.sender}</th>
+                  <th>{t.receiver}</th>
+                  <th>{t.description}</th>
+                  <th>{t.notes}</th>
+                  <th>{t.status}</th>
+                  <th>{t.colAttach}</th>
+                  <th>{t.colAction}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((row) => {
+                  const locked = row.status !== 'COMPLETED' || actor.role === 'MONITOR';
+                  return (
+                    <tr key={row.id}>
+                      <td>{row.operationNumber}</td>
+                      <td>
+                        <span className="ui-log-date">{dateOnly(String(row.transactionDate))}</span>
+                        {clockTime(row.systemDate) ? <span className="ui-log-clock">{clockTime(row.systemDate)}</span> : null}
+                      </td>
+                      <td>{row.project?.name || '—'}</td>
+                      <td>{fundLabel(row.fund, t)}{row.bank ? ` · ${row.bank.name}` : ''}</td>
+                      <td><CurrencyMark code={row.currency} /></td>
+                      <td><span className="ui-log-num">{quantityText(row.quantity)}</span></td>
+                      <td><span className="ui-log-num">{money(row.amount, row.currency)}</span></td>
+                      <td><span className="ui-log-num">{money(row.total, row.currency)}</span></td>
+                      <td>{row.sender || '—'}</td>
+                      <td>{row.receiver || '—'}</td>
+                      <td className="ui-log-note">{row.description || '—'}</td>
+                      <td className="ui-log-note">{row.notes || '—'}</td>
+                      <td>
+                        <span className={`ui-status${row.status === 'COMPLETED' ? ' is-ok' : ' is-wait'}`}>
+                          {row.status === 'COMPLETED' ? t.completed : t.pending}
+                        </span>
+                      </td>
+                      <td>
+                        {attachmentCount(row.attachments) > 0 ? (
+                          <Button variant="mini" type="button" onClick={() => setFilesRow(row)}>{t.viewFiles}</Button>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>
+                        <div className="ui-log-actions">
+                          <Button variant="mini" type="button" onClick={() => setViewing(row)}>{t.print}</Button>
+                          <Button variant="mini" type="button" disabled={locked} onClick={() => { startEdit(row); setEditReason(''); }}>{t.edit}</Button>
+                          <Button variant="mini" className="is-danger"
+                            type="button"
+                            disabled={locked}
+                            onClick={() => { setDeleteRow(row); setCancelChoice(''); setDeleteReason(''); }}
+                          >
+                            {t.cancelOp}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+          </Table>
+        )}
+        {viewing ? <ReceiptSheet row={viewing} onClose={() => setViewing(null)} /> : null}
+        {editing ? (
+          <Modal title={`${t.editTitle} ${editing.operationNumber}`} onClose={() => { resetForm(); setEditReason(''); }} closeLabel={t.close} wide>
+            <form onSubmit={saveEdit}>
+              <div className="ui-form-grid">
+                {isManager ? (
+                  <Field label={t.office}>
+                    <Select value={locationId} onChange={setLocationId} options={activeLocations.map((row) => ({ value: row.id, label: row.name }))} />
+                  </Field>
+                ) : null}
+                <Field label={t.txDate}>
+                  <Input  required type="date" value={transactionDate} onChange={(event) => setTransactionDate(event.target.value)} />
+                </Field>
+                <Field label={t.fund}>
+                  <Select value={fund} onChange={(next) => setFund(next as (typeof INCOME_FUNDS)[number]['value'])} options={INCOME_FUNDS.map((item) => ({ value: item.value, label: fundLabel(item.value, t) }))} />
+                </Field>
+                {fund === 'BANK' ? (
+                  <Field label={t.bank}>
+                    <Select value={bankId} onChange={setBankId} options={activeBanks.map((row) => ({ value: row.id, label: row.name }))} />
+                  </Field>
+                ) : null}
+                <Field label={t.project}>
+                  <Select value={projectId} onChange={setProjectId} options={incomeProjects.map((row) => ({ value: row.id, label: row.name }))} />
+                </Field>
+                <Field label={t.description}>
+                  <Input  value={description} onChange={(event) => setDescription(event.target.value)} />
+                </Field>
+                <Field label={t.sender}>
+                  <Input  value={sender} onChange={(event) => setSender(event.target.value)} />
+                </Field>
+                <Field label={t.receiver}>
+                  <Input  value={receiver} onChange={(event) => setReceiver(event.target.value)} />
+                </Field>
+                <Field label={t.currency}>
+                  <Select value={currency} onChange={setCurrency} options={currencyOptions} />
+                </Field>
+                {currency !== functional ? (
+                  <Field label="سعر الصرف (سعر اليوم)" hint="يُجلب تلقائياً من أسعار الصرف اليومية لأغراض التدقيق">
+                    <Input
+                      inputMode="decimal"
+                      value={fxRate}
+                      placeholder="سعر اليوم"
+                      disabled
+                      readOnly
+                    />
+                  </Field>
+                ) : null}
+                <Field label={t.quantity}>
+                  <Input  required inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                </Field>
+                <Field label={t.amount}>
+                  <Input  required inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+                </Field>
+                <Field label={t.notes}>
+                  <Input  value={notes} onChange={(event) => setNotes(event.target.value)} />
+                </Field>
+                <Field label={t.reasonLabel}>
+                  <Input  value={editReason} onChange={(event) => setEditReason(event.target.value)} />
+                </Field>
+              </div>
+              <AttachmentsBox
+                reference={editing.reference}
+                pendingFiles={pendingFiles}
+                onPendingFiles={setPendingFiles}
+                disabled={saving}
+                hint={t.drop}
+                pendingLabel={t.pendingSave}
+                removeLabel={t.removeFile}
+                uploadLabel={t.uploadNow}
+                uploadingLabel={t.uploading}
+              />
+              <div className="ui-dialog-actions">
+                <Button variant="ghost" type="button" onClick={() => { resetForm(); setEditReason(''); }}>{t.cancel}</Button>
+                <Button variant="primary" type="submit" disabled={saving || (fund === 'BANK' && !bankId)}>
+                  {actor.role === 'GENERAL_MANAGER' ? t.save : t.sendEdit}
+                </Button>
+              </div>
+            </form>
+          </Modal>
+        ) : null}
+        {deleteRow ? (
+          <Modal title={t.deleteTitle} onClose={() => setDeleteRow(null)} closeLabel={t.close} danger>
+            <Field label={t.cancelQuick}>
+              <Select
+                value={cancelChoice}
+                placeholder={t.pickReason}
+                onChange={setCancelChoice}
+                options={[
+                  { value: '', label: t.pickReason },
+                  { value: t.reasonAmount, label: t.reasonAmount },
+                  { value: t.reasonCurrency, label: t.reasonCurrency },
+                  { value: t.reasonCustomer, label: t.reasonCustomer },
+                  { value: 'other', label: t.reasonOther },
+                ]}
+              />
+            </Field>
+            {cancelChoice === 'other' ? (
+              <Field label={t.reasonLabel}>
+                <textarea className="form-control ui-reason" value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} rows={3} />
+              </Field>
+            ) : null}
+            <div className="ui-cancel-actions">
+              <Button variant="secondary" type="button" onClick={() => setDeleteRow(null)}>{t.cancelOp}</Button>
+              <Button variant="primary" type="button" onClick={() => void confirmDelete()}>
+                {actor.role === 'GENERAL_MANAGER' ? t.confirmCancel : t.sendDelete}
+              </Button>
+            </div>
+          </Modal>
+        ) : null}
+        {filesRow ? (
+          <FileViewer
+            reference={filesRow.reference}
+            title={`${t.colAttach} · ${t.opNo} ${filesRow.operationNumber}`}
+            closeLabel={t.close}
+            onClose={() => setFilesRow(null)}
+          />
+        ) : null}
+      </Card>
+
+      )}
+      <div className="ui-toasts" aria-live="polite">
+        {toasts.map((item) => (
+          <div key={item.id} className={`ui-toast${item.tone === 'err' ? ' is-err' : ''}`} role="status">
+            {item.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

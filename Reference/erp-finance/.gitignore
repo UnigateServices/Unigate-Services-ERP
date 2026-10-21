@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE / local tools
+.idea/
+.vscode/
+.cursor/
+.specstory/
+.cursorindexingignore
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (local dev)
+uploads/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+packages/database/generated/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.tsbuildinfo
+.turbo/
+npm-install.log
+
+# Business / reference (keep in unigate-erp-finance-docs-archive)
+_quote_work/
+طلب عميل جديد/
+تفاصيل المعايير الجديدة 2027/
+Logo/
+_docx_*.txt
+_client_pdf_extract.txt
+_orig_snip.xml
+_patched_snip.txt
+_sizes.txt
+_zip_check.txt
+body.txt
+scripts/*quote*.py
