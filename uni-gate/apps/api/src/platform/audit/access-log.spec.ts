@@ -145,6 +145,7 @@ describe('access log', () => {
     const badPage = await request(app.getHttpServer()).get('/api/platform/access-log').query({ page: 0 }).set('Cookie', cookie).expect(400);
     expect(badPage.body.code).toBe('VALIDATION_ERROR');
     const badSize = await request(app.getHttpServer()).get('/api/platform/access-log').query({ pageSize: 101 }).set('Cookie', cookie).expect(400);
+    await request(app.getHttpServer()).get('/api/platform/access-log').query({ page: 10001 }).set('Cookie', cookie).expect(400);
     expect(badSize.body.code).toBe('VALIDATION_ERROR');
     const zeroSize = await request(app.getHttpServer()).get('/api/platform/access-log').query({ pageSize: 0 }).set('Cookie', cookie).expect(400);
     expect(zeroSize.body.code).toBe('VALIDATION_ERROR');

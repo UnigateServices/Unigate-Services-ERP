@@ -109,17 +109,17 @@ export class UsersService {
 
   createForSession(auth: RequestAuth, input: ProfileInput & { password: string }) {
     const scope = this.scopeFromSession(auth);
-    return this.create(scope, input, auth.actor === 'platform' ? auth.userId : null);
+    return this.create(scope, input, auth.userId);
   }
 
   updateForSession(auth: RequestAuth, userId: string, input: UpdateInput) {
     const scope = this.scopeFromSession(auth);
-    return this.update(scope, userId, input, auth.actor === 'platform' ? auth.userId : null);
+    return this.update(scope, userId, input, auth.userId);
   }
 
   resetForSession(auth: RequestAuth, userId: string, password: string) {
     const scope = this.scopeFromSession(auth);
-    return this.reset(scope, userId, password, auth.actor === 'platform' ? auth.userId : null);
+    return this.reset(scope, userId, password, auth.userId);
   }
 
   private async list(scope: Scope, query: ListQuery) {
@@ -151,7 +151,7 @@ export class UsersService {
     return toDto(row);
   }
 
-  private async create(scope: Scope, input: ProfileInput & { password: string }, auditActorId: string | null) {
+  private async create(scope: Scope, input: ProfileInput & { password: string }, auditActorId: string) {
     if (passwordIssue(input.password)) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
@@ -183,7 +183,7 @@ export class UsersService {
           },
           include: membershipInclude,
         });
-        if (auditActorId) await this.audit(tx, auditActorId, scope.companyId, user.id, AuditAction.CREATE);
+        await this.audit(tx, auditActorId, scope.companyId, user.id, AuditAction.CREATE);
         return toDto(membership);
       });
     } catch (error) {
@@ -191,7 +191,7 @@ export class UsersService {
     }
   }
 
-  private async update(scope: Scope, userId: string, input: UpdateInput, auditActorId: string | null) {
+  private async update(scope: Scope, userId: string, input: UpdateInput, auditActorId: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.membership.findFirst({
@@ -211,6 +211,10 @@ export class UsersService {
             email: input.email ?? null,
             phone: input.phone ?? null,
             status: input.status,
+            // Deactivation ends every existing session, so reactivation needs a new sign-in.
+            ...(existing.user.status === UserStatus.ACTIVE && input.status === UserStatus.INACTIVE
+              ? { authVersion: { increment: 1 } }
+              : {}),
           },
         });
         const membership = await tx.membership.update({
@@ -222,7 +226,7 @@ export class UsersService {
           },
           include: membershipInclude,
         });
-        if (auditActorId) await this.audit(tx, auditActorId, scope.companyId, existing.userId, AuditAction.UPDATE);
+        await this.audit(tx, auditActorId, scope.companyId, existing.userId, AuditAction.UPDATE);
         return toDto(membership);
       });
     } catch (error) {
@@ -230,25 +234,24 @@ export class UsersService {
     }
   }
 
-  private async reset(scope: Scope, userId: string, password: string, auditActorId: string | null) {
-    const existing = await this.prisma.membership.findFirst({
-      where: { ...this.whereFor(scope), userId },
-      include: { user: true },
-    });
-    if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
-    if (scope.auth.actor === 'member' && scope.auth.userId === userId) throw this.selfAdmin();
-    await this.passwords.resetPassword(userId, password);
-    if (auditActorId) {
-      await this.prisma.auditEntry.create({
-        data: {
-          actorUserId: auditActorId,
-          companyId: scope.companyId,
-          action: AuditAction.UPDATE,
-          targetType: 'user',
-          targetId: userId,
-        },
+  private async reset(scope: Scope, userId: string, password: string, auditActorId: string) {
+    if (passwordIssue(password)) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Password must be at least 8 characters and include a letter and a number.',
       });
     }
+    const passwordHash = await this.passwords.hash(password);
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.membership.findFirst({
+        where: { ...this.whereFor(scope), userId },
+        include: { user: true },
+      });
+      if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
+      if (scope.auth.actor === 'member' && scope.auth.userId === userId) throw this.selfAdmin();
+      await this.passwords.writeHash(tx, userId, passwordHash);
+      await this.audit(tx, auditActorId, scope.companyId, userId, AuditAction.UPDATE);
+    });
   }
 
   private scopeFromSession(auth: RequestAuth): Scope {
@@ -282,18 +285,24 @@ export class UsersService {
 
   private whereFor(scope: Scope, q?: string): Prisma.MembershipWhereInput {
     const limited = scope.locationId !== undefined;
+    const and: Prisma.MembershipWhereInput[] = [];
+    if (limited) {
+      // A branch-scoped manager reaches staff on that branch who cannot manage users, and their own record.
+      and.push({ OR: [{ role: { canManageUsers: false } }, { userId: scope.auth.userId }] });
+    }
+    if (q) {
+      and.push({
+        OR: [
+          { user: { name: { contains: q, mode: 'insensitive' } } },
+          { username: { contains: q, mode: 'insensitive' } },
+        ],
+      });
+    }
     return {
       companyId: scope.companyId,
       user: { kind: UserKind.MEMBER },
       ...(limited ? { locationId: scope.locationId ?? '__none__' } : {}),
-      ...(q
-        ? {
-            OR: [
-              { user: { name: { contains: q, mode: 'insensitive' } } },
-              { username: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      ...(and.length ? { AND: and } : {}),
     };
   }
 
@@ -304,6 +313,8 @@ export class UsersService {
     locationId: string | null,
     existing: { roleId: string; locationId: string | null } | null,
   ) {
+    // Holds the role row until commit, so a concurrent scope change waits and then sees this membership.
+    await tx.$queryRaw`SELECT id FROM roles WHERE id = ${roleId} AND company_id = ${scope.companyId} FOR SHARE`;
     const role = await tx.role.findFirst({ where: { id: roleId, companyId: scope.companyId } });
     if (!role) throw this.roleNotFound();
     const scoped = scope.locationId !== undefined;
@@ -311,6 +322,13 @@ export class UsersService {
       throw new ForbiddenException({
         code: ErrorCode.FORBIDDEN,
         message: 'This role is outside your branch.',
+      });
+    }
+    const keepsOwnRole = existing !== null && existing.roleId === role.id;
+    if (scoped && role.canManageUsers && !keepsOwnRole) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'This role is outside your scope.',
       });
     }
     if (role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
@@ -416,7 +434,7 @@ export class UsersService {
 function parseListQuery(raw: { page?: string; pageSize?: string; q?: string }): ListQuery {
   const page = raw.page === undefined || raw.page === '' ? 1 : Number(raw.page);
   const pageSize = raw.pageSize === undefined || raw.pageSize === '' ? 20 : Number(raw.pageSize);
-  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+  if (!Number.isInteger(page) || page < 1 || page > 10000 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
     throw new BadRequestException({
       code: ErrorCode.VALIDATION_ERROR,
       message: 'Page and page size are not valid.',

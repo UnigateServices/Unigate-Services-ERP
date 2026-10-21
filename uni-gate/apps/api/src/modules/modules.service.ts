@@ -40,7 +40,9 @@ export class ModulesService {
 
   async replace(companyId: string, modules: Flag[], actorUserId: string): Promise<{ items: PlatformModule[] }> {
     return this.prisma.$transaction(async (tx) => {
-      await this.requireCompany(companyId, tx);
+      // One module change per company at a time: a second PUT waits, then reads the committed rows.
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM companies WHERE id = ${companyId} FOR NO KEY UPDATE`;
+      if (locked.length === 0) await this.requireCompany(companyId, tx);
       this.assertPayload(modules);
       const existing = await tx.companyModule.findMany({ where: { companyId } });
       const byKey = new Map(existing.map((row) => [row.moduleKey, row]));

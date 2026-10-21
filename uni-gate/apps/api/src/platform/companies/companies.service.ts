@@ -109,6 +109,12 @@ export class CompaniesService {
       const company = await this.prisma.$transaction(async (tx) => {
         const existing = await tx.company.findUnique({ where: { id: companyId } });
         if (!existing) throw this.notFound();
+        const unchanged =
+          existing.name === input.name &&
+          existing.code === input.code &&
+          existing.priceUsd.toFixed(2) === new Prisma.Decimal(input.priceUsd).toFixed(2) &&
+          calendarDate(existing.expiresOn) === input.expiresOn;
+        if (unchanged) return existing;
         await this.assertCodeAvailable(tx, input.code, companyId);
         const company = await tx.company.update({
           where: { id: companyId },

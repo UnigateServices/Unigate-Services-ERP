@@ -1,6 +1,6 @@
 # Unigate handoff
 
-Continuation document for a new Agent. It describes the repository after Phase 9 was accepted and merged on 20 October 2026. It does not replace reading the code.
+Continuation document for a new Agent. It describes the repository after Phase 9 was accepted and merged on 20 October 2026, plus the foundation hardening from the 21 October 2026 review (see "Foundation hardening" below). It does not replace reading the code.
 
 `UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; where they differ, this file and the code win.
 
@@ -17,6 +17,8 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 ## 1. Current completed phase and exact status
 
 **Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, and Phase 9 platform audit list.
+
+**Implemented, waiting for acceptance:** foundation hardening from the 21 October 2026 review, on branch `claude/exciting-pasteur-4q0bzq`. It is not merged into `main` until the user accepts it.
 
 **Not started:** Phase 10. Do not start it until the user explicitly says so. Finance, exchange, gold, aviation, engineering, and HR business logic are still not built.
 
@@ -41,6 +43,7 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 | Finance reference files | `acf36ce` — `Reference/tradivia-finance-v2` tracked as normal files. That folder was later renamed to `Reference/erp-finance`. |
 | Finance reference update | `751fa61` — replace the copy with finance repository commit `77ce653` (18 October 2026) |
 | Finance reference merge | `0671e5d` — pull request #3, `finance-reference-update` into `main` |
+| Foundation hardening | branch `claude/exciting-pasteur-4q0bzq`, on top of `ef47927`. Not merged yet. |
 | Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
 `main` is `0671e5d`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
@@ -162,13 +165,15 @@ Customer and support user routes. Company comes only from the session. A client 
 
 | Method | Path | Behavior |
 |---|---|---|
-| GET | `/api/users` | Same list contract. A member must currently have `canManageUsers`, or the response is `403` `FORBIDDEN`. `ALL_BRANCHES` sees every customer user in the company. `BRANCH` and `OWN` see only users on their membership location. A platform operator uses `actingCompanyId` and sees every customer user there. No acting company is `409` `CONFLICT`. |
-| POST | `/api/users` | Same create rules, scoped to that session company. A branch-scoped manager cannot assign an `ALL_BRANCHES` role or another branch: `403` `FORBIDDEN`. |
+| GET | `/api/users` | Same list contract. A member must currently have `canManageUsers`, or the response is `403` `FORBIDDEN`. `ALL_BRANCHES` sees every customer user in the company. `BRANCH` and `OWN` see only users on their membership location whose role has `canManageUsers = false`, plus their own record. A peer manager on the same branch is out of scope. A platform operator uses `actingCompanyId` and sees every customer user there. No acting company is `409` `CONFLICT`. |
+| POST | `/api/users` | Same create rules, scoped to that session company. A branch-scoped manager cannot assign an `ALL_BRANCHES` role, a role with `canManageUsers`, or another branch: `403` `FORBIDDEN`. Keeping their own current role on their own record is allowed. |
 | GET | `/api/users/:userId` | Same scope as the list. An out-of-scope id is `404` `NOT_FOUND`. |
 | PATCH | `/api/users/:userId` | Same fields as the platform patch. Out of scope is `404` `NOT_FOUND`. |
-| POST | `/api/users/:userId/password` | Same reset as the platform route, for an in-scope user. Returns 204. A member manager's reset is not audited. |
+| POST | `/api/users/:userId/password` | Same reset as the platform route, for an in-scope user. Returns 204. The new hash and its audit row are one transaction. |
 
-A role or location that is not in the session company is `404` `NOT_FOUND`. An `ALL_BRANCHES` role with a location is `400` `VALIDATION_ERROR`. A `BRANCH` or `OWN` role without a location is `400` `LOCATION_REQUIRED`. A new or changed assignment cannot use an `INACTIVE` location. Keeping the same inactive location, with the same role, is allowed. A member cannot deactivate themselves, change their own role, or change their own location, and cannot reset their own password on these routes. Those attempts are `409` `CONFLICT`. Deactivating a user does not change `authVersion`. The next authenticated request is rejected with `401` `UNAUTHORIZED` and the cookie is cleared. A later login returns `INACTIVE`.
+Member create, edit, and reset write the same `AuditEntry` rows as the platform routes, with the member as actor. They appear in the platform audit list. Members still cannot read that list.
+
+A role or location that is not in the session company is `404` `NOT_FOUND`. An `ALL_BRANCHES` role with a location is `400` `VALIDATION_ERROR`. A `BRANCH` or `OWN` role without a location is `400` `LOCATION_REQUIRED`. A new or changed assignment cannot use an `INACTIVE` location. Keeping the same inactive location, with the same role, is allowed. A member cannot deactivate themselves, change their own role, or change their own location, and cannot reset their own password on these routes. Those attempts are `409` `CONFLICT`. Deactivating a user (ACTIVE to INACTIVE) increments `authVersion`, so every existing session ends for good, including after reactivation. The next authenticated request is rejected with `401` `UNAUTHORIZED` and the cookie is cleared. A later login returns `INACTIVE`. After reactivation the user signs in again. No data is removed.
 
 Session module routes. Company comes only from the signed session. A client `companyId` does not change scope. `ModuleAccessGuard` reads `CompanyModule.enabled` from PostgreSQL on the request. It does not trust the browser or a token claim. A module disabled after the session was issued is refused on the next request. `authVersion` does not change.
 
@@ -216,7 +221,7 @@ Migrations, in order:
 
 No finance tables. After the Phase 2 cleanup, local `unigate` held only the development seed: companies `tradivia`, `ofoq`, `expired`, and `lastday`, plus their roles, locations, and users. Re-run `npm run db:seed:dev` on a later calendar day so `lastday` stays that day and `expired` stays the day before.
 
-`authVersion` increments when the user changes their own password or `PasswordService.resetPassword` runs. It does not increment when a role changes. A signed session must carry the current value. Older versions are rejected. Role and permission checks read the current `Role` row.
+`authVersion` increments when the user changes their own password, when an administrator resets it, and when the user is deactivated. It does not increment when a role changes. A signed session must carry the current value. Older versions are rejected. Role and permission checks read the current `Role` row.
 
 ---
 
@@ -255,6 +260,7 @@ If the server is down:
 - Login codes: `WRONG_CREDENTIALS`, `LOCKED`, `INACTIVE`, `COMPANY_SUSPENDED`, `SUBSCRIPTION_EXPIRED`.
 - An already issued session whose user is inactive, whose company is suspended, or whose subscription has expired is rejected on the next authenticated request with `401` and `{ "code": "UNAUTHORIZED", "message": "Authentication is required." }`. The cookie is cleared. The specific login codes are not reused for that later request.
 - Five wrong passwords return `WRONG_CREDENTIALS`. The fifth sets `lockedUntil` 15 minutes ahead. The next attempt returns `LOCKED`. A later successful login, including after the lock time has passed, sets `failedLoginCount` back to 0 and clears `lockedUntil`.
+- Each attempt is counted in one conditional update before the password is checked, so parallel attempts share the same five-attempt allowance. An attempt over the allowance returns `LOCKED`.
 - Logout clears the cookie only. A copied token still works until it expires or `authVersion` changes.
 - Customer `/api/auth/me` does not include `priceUsd`, `expiresOn`, or the password hash.
 - `expiresOn` is the last valid calendar day in `Asia/Damascus`. The day itself is still valid.
@@ -312,25 +318,47 @@ Do not commit `.env`, PostgreSQL data directories, `unigate-postgres` logs, or J
 
 ---
 
+## Foundation hardening (21 October 2026 review)
+
+Independent review and fixes, on branch `claude/exciting-pasteur-4q0bzq`. Product decisions from the user:
+
+- A branch-scoped manager (for example SUPERVISOR) manages only staff on their branch whose role has no `canManageUsers`. They cannot see, edit, reset, or deactivate a peer manager, and cannot grant a role with `canManageUsers`. `ALL_BRANCHES` managers and platform operators keep full reach in their scope.
+- Deactivating a user ends every existing session (see section 4).
+
+Fixes:
+
+- Role scope change and user assignment lock the role row (`FOR UPDATE` and `FOR SHARE`), so a race can no longer store an `ALL_BRANCHES` role with a branch.
+- Module `PUT` locks the company row (`FOR NO KEY UPDATE`). Simultaneous PUTs no longer return 500 and write one audit row per real change.
+- Login lockout is atomic (section 7).
+- Member user actions are audited. A password reset and its audit row are one transaction.
+- A malformed `ug_access` cookie is `401`, not `500`.
+- `page` is capped at 10000 on the company, user, and audit lists. Larger is `400` `VALIDATION_ERROR`.
+- A company `PATCH` that changes nothing writes no audit row.
+- The customer user form offers a branch manager only the roles they may assign.
+- Tests: database creation and migration run once per run in `apps/api/test/jest.global-setup.ts`, through Prisma instead of a Windows `psql.exe` path. ts-jest reads `@unigate/shared` from source, so tests do not need a prior build. They run on Windows, Linux, and macOS.
+
+Results on 21 October 2026 (Linux, PostgreSQL 16 on port 5433): `tsc --noEmit` for API and web exit 0, `nest build` exit 0, `next build` exit 0, `npm run test:api` 12 suites and 58 tests passed in about 16 s (31 s before the setup change).
+
 ## Working method
 
 For every phase: preflight first (`git status`, PostgreSQL on port 5433, existing tests pass), then implement, run all checks, then STOP and report. Never commit or start the next phase before the user manually accepts. Implement on a branch named `phase-N-...`, stage explicit paths only, and merge through a pull request.
 
 ## Known follow-ups for Phase 10
 
-1. A branch-scoped manager can edit or reset the password of any user on their branch, including peers with `canManageUsers` (lateral takeover). Policy decision for the user.
-2. The same manager can assign roles that carry `canManageUsers` (escalation). Policy decision for the user.
-3. Password reset and its audit row are separate statements, not one transaction.
-4. `ModulesModule` does not export `ModulesService` or `ModuleAccessGuard`. Add exports when the first real module needs the guard.
-5. Two simultaneous PUTs on a company with a missing `CompanyModule` row could return 500 on the unique constraint instead of a clean result.
-6. `GET /api/modules/:key` checks enabled twice (guard and service).
-7. The API test suite time varies a lot (95 s to 354 s). Check why.
-8. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
-9. The access-log `page` has no upper bound (`pageSize` is capped at 100, `page` is not).
-10. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
-11. Member actions are not audited. A member create, edit, or password reset writes no `AuditEntry`.
-12. Unused mock code remains (`mocks/db.ts`, `mocks/seed.ts`, and unused directory mutators). Remove it in a separate cleanup commit after approval.
-13. A branch manager with `canManageUsers` may edit or reset the password of peers and assign roles; review the scope limits.
+Resolved by the foundation hardening: the old items for peer takeover, role escalation, the reset transaction, the module PUT race, test time, the unbounded `page`, and unaudited member actions.
+
+The test time varied (95 s to 354 s) because `jest.setup.ts` was a `setupFiles` entry, which Jest runs once per test file. Each of the 12 suites spawned `psql` and `npx prisma migrate deploy` again, which is slow and uneven on Windows (process start, Defender scans of the Prisma engine, a cold ts-jest cache). That work now runs once in `globalSetup`.
+
+Still open:
+
+1. `ModulesModule` does not export `ModulesService` or `ModuleAccessGuard`. Add exports when the first real module (finance) needs the guard.
+2. `GET /api/modules/:key` checks enabled twice (guard and service). Harmless.
+3. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
+4. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
+5. Unused mock code remains (`mocks/db.ts`, `mocks/seed.ts`, and unused directory mutators). Remove it in a separate cleanup commit after approval.
+6. `POST /api/auth/password` does not count wrong current passwords toward the lockout.
+7. Role scope and membership location agree through application locks, not a database constraint. Consider a database rule before finance relies on scope.
+8. An `ALL_BRANCHES` manager can still manage another `ALL_BRANCHES` manager. Confirm with the user whether that is wanted.
 
 ## 12. Exact next action for the next Agent
 

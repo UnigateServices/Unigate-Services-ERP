@@ -217,6 +217,22 @@ describe('modules', () => {
     expect(after.body.code).toBe('CONFLICT');
   });
 
+  it('handles simultaneous PUTs without a server error and audits each real change once', async () => {
+    await platformUser();
+    const cookie = await loginPlatform();
+    const alpha = await createCompany(cookie, 'Alpha', 'alpha');
+    await prisma.companyModule.deleteMany({ where: { companyId: alpha.id } });
+
+    const created = await Promise.all(Array.from({ length: 6 }, () => putModules(cookie, alpha.id, [{ key: 'gold', enabled: true }])));
+    expect(created.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
+    expect(await prisma.companyModule.count({ where: { companyId: alpha.id, moduleKey: 'gold' } })).toBe(1);
+    expect(await prisma.auditEntry.count({ where: { companyId: alpha.id, targetType: 'module', targetId: 'gold' } })).toBe(1);
+
+    const toggled = await Promise.all(Array.from({ length: 6 }, () => putModules(cookie, alpha.id, [{ key: 'gold', enabled: false }])));
+    expect(toggled.every((response) => response.status === 200)).toBe(true);
+    expect(await prisma.auditEntry.count({ where: { companyId: alpha.id, targetType: 'module', targetId: 'gold' } })).toBe(2);
+  });
+
   it('treats a missing row as disabled, creates it on PUT, and rolls back a bad payload', async () => {
     const operator = await platformUser();
     const cookie = await loginPlatform();

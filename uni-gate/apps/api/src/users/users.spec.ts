@@ -82,6 +82,7 @@ describe('customer users', () => {
       .expect(200);
     expect(byUsername.body.items).toHaveLength(1);
     await request(app.getHttpServer()).get(`/api/platform/companies/${alpha.id}/users`).query({ pageSize: 101 }).set('Cookie', cookie).expect(400);
+    await request(app.getHttpServer()).get(`/api/platform/companies/${alpha.id}/users`).query({ page: 10001 }).set('Cookie', cookie).expect(400);
 
     const detail = await request(app.getHttpServer())
       .get(`/api/platform/companies/${alpha.id}/users/${page.body.items[0].id}`)
@@ -213,7 +214,7 @@ describe('customer users', () => {
 
     const homeCookie = await loginMember('alpha', 'home');
     const homeList = await request(app.getHttpServer()).get('/api/users').set('Cookie', homeCookie).expect(200);
-    expect(homeList.body.items.map((item: { username: string }) => item.username).sort()).toEqual(['home', 'local']);
+    expect(homeList.body.items.map((item: { username: string }) => item.username).sort()).toEqual(['home']);
     const depotUser = await prisma.membership.findFirstOrThrow({ where: { username: 'depot' } });
     await request(app.getHttpServer()).get(`/api/users/${depotUser.userId}`).set('Cookie', homeCookie).expect(404);
     await request(app.getHttpServer())
@@ -248,7 +249,50 @@ describe('customer users', () => {
 
     const ownCookie = await loginMember('alpha', 'local');
     const ownList = await request(app.getHttpServer()).get('/api/users').set('Cookie', ownCookie).expect(200);
-    expect(ownList.body.items.map((item: { username: string }) => item.username).sort()).toEqual(['home', 'local']);
+    expect(ownList.body.items.map((item: { username: string }) => item.username).sort()).toEqual(['local']);
+
+    // A branch manager does not reach a peer who can manage users, and cannot grant that permission.
+    const peer = local.body.id as string;
+    await request(app.getHttpServer()).get(`/api/users/${peer}`).set('Cookie', homeCookie).expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/users/${peer}/password`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ password: 'Taken1234' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(`/api/users/${peer}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ ...apiBody(await currentBody(alpha.id, peer)), status: 'INACTIVE' })
+      .expect(404);
+    const supervisorRole = await prisma.role.findFirstOrThrow({ where: { companyId: alpha.id, key: 'SUPERVISOR' } });
+    const grant = await request(app.getHttpServer())
+      .post('/api/users')
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ name: 'Second', username: 'second', password: 'Secret123', email: null, phone: null, roleId: supervisorRole.id, locationId: home });
+    expect(grant.status).toBe(403);
+    const staff = await request(app.getHttpServer())
+      .post('/api/users')
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ name: 'Staff', username: 'staff', password: 'Secret123', email: null, phone: null, roleId: employeeRole.id, locationId: home })
+      .expect(201);
+    const promote = await request(app.getHttpServer())
+      .patch(`/api/users/${staff.body.id}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ ...apiBody(await currentBody(alpha.id, staff.body.id)), roleId: supervisorRole.id });
+    expect(promote.status).toBe(403);
+    const homeLead = await prisma.membership.findFirstOrThrow({ where: { username: 'home' } });
+    expect(await prisma.auditEntry.count({ where: { targetId: staff.body.id, action: 'CREATE', actorUserId: homeLead.userId } })).toBe(1);
+    const ownProfile = await request(app.getHttpServer())
+      .patch(`/api/users/${homeLead.userId}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', homeCookie)
+      .send({ ...apiBody(await currentBody(alpha.id, homeLead.userId)), name: 'Home Lead West' });
+    expect(ownProfile.status).toBe(200);
 
     await createUser(cookie, alpha.id, userBody({ name: 'Clerk', username: 'clerk', roleKey: 'EMPLOYEE', locationId: home }));
     const clerkCookie = await loginMember('alpha', 'clerk');
@@ -338,8 +382,13 @@ describe('customer users', () => {
 
     const deactivated = await patchUser(cookie, alpha.id, userId, { ...(await currentBody(alpha.id, userId)), status: 'INACTIVE' });
     expect(deactivated.status).toBe(200);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).authVersion).toBe(version);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).authVersion).toBe(version + 1);
     await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', fresh).expect(401);
+    const reactivated = await patchUser(cookie, alpha.id, userId, { ...(await currentBody(alpha.id, userId)), status: 'ACTIVE' });
+    expect(reactivated.status).toBe(200);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).authVersion).toBe(version + 1);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', fresh).expect(401);
+    await patchUser(cookie, alpha.id, userId, { ...(await currentBody(alpha.id, userId)), status: 'INACTIVE' });
     const lockedOut = await request(app.getHttpServer())
       .post('/api/auth/login')
       .set('Origin', ORIGIN)
@@ -358,7 +407,8 @@ describe('customer users', () => {
       .send({ password: 'Clerk1234' })
       .expect(204);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: clerk.body.id } })).authVersion).toBe(clerkVersion + 1);
-    expect(await prisma.auditEntry.count({ where: { targetId: clerk.body.id, action: 'UPDATE' } })).toBe(0);
+    const boss = await prisma.membership.findFirstOrThrow({ where: { username: 'boss' } });
+    expect(await prisma.auditEntry.count({ where: { targetId: clerk.body.id, action: 'UPDATE', actorUserId: boss.userId } })).toBe(1);
 
     const inAlpha = await enter(alpha.id, cookie);
     const alphaUsers = await request(app.getHttpServer()).get('/api/users').set('Cookie', inAlpha).expect(200);

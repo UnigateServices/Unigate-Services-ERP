@@ -655,7 +655,13 @@ export function UserFormScreen({
   if (missing) return <p>{messages.notFound}</p>;
   if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
   const broad = seesAllBranches(session);
-  const choices = roles.filter((role) => broad || role.visibilityScope !== 'ALL_BRANCHES');
+  // A branch manager assigns only branch roles without user management. The current role stays listed.
+  const choices = roles.filter(
+    (role) =>
+      broad ||
+      role.id === existing?.role.id ||
+      (role.visibilityScope !== 'ALL_BRANCHES' && !role.canManageUsers),
+  );
   const selected = choices.find((role) => role.id === roleId) ?? roles.find((role) => role.id === roleId);
   const needsLocation = selected ? selected.visibilityScope !== 'ALL_BRANCHES' : true;
   const chosenLocation = broad ? locationId : (session.locationId ?? locationId);

@@ -19,7 +19,11 @@ export function readAccessCookie(header: string | undefined): string | undefined
     const index = piece.indexOf('=');
     if (index === -1) continue;
     if (piece.slice(0, index).trim() !== ACCESS_COOKIE) continue;
-    return decodeURIComponent(piece.slice(index + 1).trim());
+    try {
+      return decodeURIComponent(piece.slice(index + 1).trim());
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }
