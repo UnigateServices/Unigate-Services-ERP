@@ -38,10 +38,12 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 | Phase 8 merge | `640a02e` — pull request #1, `phase-8-modules` into `main` |
 | Phase 9 audit | `c58b33a` — platform audit list API and the real support log screen |
 | Phase 9 merge | `6dfa643` — pull request #2, `phase-9-audit` into `main` |
-| Finance reference files | `acf36ce` — `Reference/tradivia-finance-v2` tracked as normal files |
+| Finance reference files | `acf36ce` — `Reference/tradivia-finance-v2` tracked as normal files. That folder was later renamed to `Reference/erp-finance`. |
+| Finance reference update | `751fa61` — replace the copy with finance repository commit `77ce653` (18 October 2026) |
+| Finance reference merge | `0671e5d` — pull request #3, `finance-reference-update` into `main` |
 | Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
-`main` is `6dfa643`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
+`main` is `0671e5d`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
 
 ---
 
@@ -275,9 +277,9 @@ Creating and editing branches is a platform route. Members see branches and cann
 
 ## 9. Finance integration boundary
 
-`Reference/tradivia-finance-v2` is a separate NestJS + Prisma + Next app for one client. Its schema uses `Employee` as the login record.
+`Reference/erp-finance` is a separate NestJS + Prisma + Next app for one client. Its schema uses `Employee` as the login record. The folder was copied from finance repository commit `77ce653` (18 October 2026) and merged in pull request #3 (`0671e5d`).
 
-`acf36ce` tracks that folder as normal files. It remains reference only. Finance integration has not started.
+`acf36ce` first tracked that folder as normal files under `Reference/tradivia-finance-v2`. It remains reference only. Finance integration has not started.
 
 Do not start Unigate from that schema. Do not import its auth. Do not merge its tables now. Versions were aligned (Nest 11, Prisma 6.19.3, TypeScript 5.9.3) so a later merge is less painful. Do not upgrade Prisma to 8 for the foundation.
 
@@ -328,12 +330,13 @@ For every phase: preflight first (`git status`, PostgreSQL on port 5433, existin
 10. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
 11. Member actions are not audited. A member create, edit, or password reset writes no `AuditEntry`.
 12. Unused mock code remains (`mocks/db.ts`, `mocks/seed.ts`, and unused directory mutators). Remove it in a separate cleanup commit after approval.
+13. A branch manager with `canManageUsers` may edit or reset the password of peers and assign roles; review the scope limits.
 
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree. Do not stage the untracked root `package.json` unless the user asks.
 2. Wait until the user explicitly starts **Phase 10** and names its scope.
-3. Do not start finance, a new audit write, or a customer-facing audit before that. The user chooses the scope.
+3. Do not start finance, a write route to the audit list, or a customer-facing audit before that. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
 6. Branch data is already `Location` in PostgreSQL. Do not put branch lists back in `ug_mock_db`. Keep branch-name uniqueness case-sensitive unless the user changes that rule. Do not make an inactive location block login unless the user asks for that rule.
@@ -349,7 +352,7 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 ## DO NOT DO
 
 - Do not start Phase 10 until the user explicitly says so.
-- Do not add an audit write, and do not show the audit list to members.
+- Do not add a write route to the audit list, and do not show the audit list to members.
 - Do not let a member toggle a company module.
 - Do not put module flags back in `ug_mock_db`.
 - Do not let a member change their own role, branch, or status, or reset their own password, through the user administration routes.
