@@ -89,11 +89,11 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 - Company detail offers **الدخول إلى الشركة**. That calls enter, then opens `/app`. The support banner reads the company from `/api/auth/me`. Leave returns to `/platform/companies/:companyId` and keeps the operator signed in.
 - While support is open, `/platform` stays the platform shell and shows that a support session is open. `/app`, `/app/branches`, `/app/roles`, `/app/users`, `/app/modules`, and `/app/modules/:key` use the acting company. Other `/app` routes for a platform operator still show a pending note.
 - A member session still uses `Membership` and does not use `actingCompanyId`. Branch lists come from `GET /api/locations`. Role lists come from `GET /api/roles` and are read-only. User lists come from `GET /api/users`. The seeded TRADIVIA manager is `GENERAL_MANAGER` with `ALL_BRANCHES` and `canManageUsers`, so that account sees every TRADIVIA branch, the role list, and every customer user. It cannot create or edit branches or roles. It can manage other customer users. On its own user record the role, branch, and status controls are disabled, and the password-reset section is hidden.
-- Platform company, branch, role, user, and module screens do not read those records from `ug_mock_db`.
+- The web mock store is gone. Screens do not read or write `ug_mock_db`.
 - Server-backed user screens: `/platform/companies/:id/users`, `/platform/companies/:id/users/new`, `/platform/companies/:id/users/:userId`, `/app/users`, `/app/users/new`, and `/app/users/:userId`. Company detail links to Users. The customer dashboard user count, shown only when `canManageUsers` is true, is the `total` from the authorized user list.
 - Server-backed module screens: `/platform/companies/:id/modules`, `/app/modules`, and `/app/modules/:key`. Company detail links to Modules and lists enabled modules from the company detail response. The customer navigation and dashboard show only enabled modules. An enabled module opens the not-ready page. A direct URL for a disabled module shows that it is not available. An unknown key shows an unknown section. Turning a module off asks for confirmation and does not delete data.
 - The support log at `/platform/audit` and the dashboard recent-activity table read `GET /api/platform/access-log`. Recent activity is text only and does not open a company. A member who opens `/platform/audit` is sent to `/app` by the existing platform session gate.
-- Branch, role, user, module, and audit screens have one source of truth: PostgreSQL. Unused mock mutators remain in `mocks/db.ts`, `mocks/seed.ts`, and `services/directory.ts`. They are not called by the screens.
+- Branch, role, user, module, and audit screens have one source of truth: PostgreSQL. `services/directory.ts` keeps only the password, company-code, and role-key checks.
 - The customer dashboard branch count comes from the authorized location list. The platform company detail branch and user counts remain the PostgreSQL counts. The branch count includes inactive branches.
 - `readUserPassword` is not in the mock directory and is not an API. Own password change stays on `POST /api/auth/password`. An administrator reset uses the user password routes below.
 
@@ -355,14 +355,13 @@ Still open:
 2. `GET /api/modules/:key` checks enabled twice (guard and service). Harmless.
 3. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
 4. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
-5. Unused mock code remains (`mocks/db.ts`, `mocks/seed.ts`, and unused directory mutators). Remove it in a separate cleanup commit after approval.
-6. `POST /api/auth/password` does not count wrong current passwords toward the lockout.
-7. Role scope and membership location agree through application locks, not a database constraint. Consider a database rule before finance relies on scope.
-8. An `ALL_BRANCHES` manager can still manage another `ALL_BRANCHES` manager. Confirm with the user whether that is wanted.
+5. `POST /api/auth/password` does not count wrong current passwords toward the lockout.
+6. Role scope and membership location agree through application locks, not a database constraint. Consider a database rule before finance relies on scope.
+7. An `ALL_BRANCHES` manager can still manage another `ALL_BRANCHES` manager. Confirm with the user whether that is wanted.
 
 ## 12. Exact next action for the next Agent
 
-1. Read this file and `git status`. Do not discard the tree. Do not stage the untracked root `package.json` unless the user asks.
+1. Read this file and `git status`. Do not discard the tree.
 2. Wait until the user explicitly starts **Phase 10** and names its scope.
 3. Do not start finance, a write route to the audit list, or a customer-facing audit before that. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
@@ -373,7 +372,7 @@ Still open:
 9. Company modules are already PostgreSQL-backed. Do not put module flags back in `ug_mock_db`. Do not let a member toggle `enabled`. Do not store `ready` per company. Do not increment `authVersion` for a module change. A missing row stays disabled until a `PUT` supplies that key.
 10. The platform audit list is already PostgreSQL-backed and read-only. Do not put it back in `ug_mock_db`. Do not add a write route. Do not show it to members.
 
-Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start commands are in section 6. Web: `npm run dev:web`. API: `npm run dev:api`. Both are run from `uni-gate`.
+Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start commands are in section 6. From `uni-gate`: `npm run dev:web` and `npm run dev:api`. From the repository root, `package.json` forwards the same work: `npm run dev:web`, `npm run dev:api`, `npm run test:api`, and the matching build, typecheck, and database scripts.
 
 ---
 
