@@ -2,7 +2,7 @@
 
 Continuation document for a new Agent. It describes the repository after Phase 9 was accepted and merged on 20 October 2026, plus the foundation hardening from the 21 October 2026 review (see "Foundation hardening" below). It does not replace reading the code.
 
-`UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; where they differ, this file and the code win.
+`UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; the finance merge plan is in `docs/FINANCE_MERGE_PLAN.md` (draft); where they differ, this file and the code win.
 
 ## Company modules (agreed product rules)
 - Keys: finance, exchange, gold, aviation, engineering, hr.
@@ -362,8 +362,8 @@ Still open:
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree.
-2. Wait until the user explicitly starts **Phase 10** and names its scope.
-3. Do not start finance, a write route to the audit list, or a customer-facing audit before that. The user chooses the scope.
+2. The next work is the finance merge, planned in `docs/FINANCE_MERGE_PLAN.md`. Status: draft. Decisions in section 3 of that plan must be approved before any merge code.
+3. Do not write finance merge code, a write route to the audit list, or a customer-facing audit before that approval. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
 6. Branch data is already `Location` in PostgreSQL. Do not put branch lists back in `ug_mock_db`. Keep branch-name uniqueness case-sensitive unless the user changes that rule. Do not make an inactive location block login unless the user asks for that rule.
