@@ -1,8 +1,8 @@
 # Unigate handoff
 
-Continuation document for a new Agent. It describes the repository after Phase 9 was accepted and merged on 20 October 2026, plus the foundation hardening from the 21 October 2026 review (see "Foundation hardening" below). It does not replace reading the code.
+Continuation document for a new Agent. It describes the repository after Phases 1 to 10 were accepted and merged (Phase 10 is the foundation hardening from the 21 October 2026 review, see "Foundation hardening" below), and after the finance merge decisions were approved on 22 October 2026. It does not replace reading the code.
 
-`UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; the finance merge plan is in `docs/FINANCE_MERGE_PLAN.md` (draft); where they differ, this file and the code win.
+`UNIGATE_CURRENT_STATE.md` was removed (git history keeps it); product requirements are in `docs/FOUNDATION_REQUIREMENTS.md` (initial snapshot); UI notes are in `docs/UI_NOTES.md`; the finance merge plan is in `docs/FINANCE_MERGE_PLAN.md` (decisions approved 22 October 2026; section 3 is binding); where they differ, this file and the code win.
 
 ## Company modules (agreed product rules)
 - Keys: finance, exchange, gold, aviation, engineering, hr.
@@ -16,11 +16,11 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 
 ## 1. Current completed phase and exact status
 
-**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, and Phase 9 platform audit list.
+**Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, Phase 9 platform audit list, Phase 10 foundation hardening (pull request #4), and removal of the web mock store (pull request #5).
 
-**Implemented, waiting for acceptance:** foundation hardening from the 21 October 2026 review, on branch `claude/exciting-pasteur-4q0bzq`. It is not merged into `main` until the user accepts it.
+**Approved, not started:** the finance merge decisions in `docs/FINANCE_MERGE_PLAN.md` section 3. The next phase is F1 (role permission table). Do not start it until the user explicitly says so.
 
-**Not started:** Phase 10. Do not start it until the user explicitly says so. Finance, exchange, gold, aviation, engineering, and HR business logic are still not built.
+**Not built:** finance, exchange, gold, aviation, engineering, and HR business logic.
 
 **Git**
 
@@ -43,10 +43,12 @@ Continuation document for a new Agent. It describes the repository after Phase 9
 | Finance reference files | `acf36ce` — `Reference/tradivia-finance-v2` tracked as normal files. That folder was later renamed to `Reference/erp-finance`. |
 | Finance reference update | `751fa61` — replace the copy with finance repository commit `77ce653` (18 October 2026) |
 | Finance reference merge | `0671e5d` — pull request #3, `finance-reference-update` into `main` |
-| Foundation hardening | branch `claude/exciting-pasteur-4q0bzq`, on top of `ef47927`. Not merged yet. |
+| Phase 10 hardening merge | pull request #4, `claude/exciting-pasteur-4q0bzq` into `main` (21 October 2026) |
+| Mock store removal | `0374fa7` — pull request #5, `cleanup-mocks` into `main` |
+| Finance merge plan draft | `34ffd85` — `docs/FINANCE_MERGE_PLAN.md` |
 | Previous handoff | `02e6022` — Phase 2 acceptance notes |
 
-`main` is `0671e5d`. A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
+`main` includes everything above (check `git log` for the current head). A fresh clone includes authentication, platform company routes, server-signed support, PostgreSQL-backed branches, roles, customer users, company modules, and the platform audit list. Do not reset or clean the tree.
 
 ---
 
@@ -285,9 +287,11 @@ Creating and editing branches is a platform route. Members see branches and cann
 
 `Reference/erp-finance` is a separate NestJS + Prisma + Next app for one client. Its schema uses `Employee` as the login record. The folder was copied from finance repository commit `77ce653` (18 October 2026) and merged in pull request #3 (`0671e5d`).
 
-`acf36ce` first tracked that folder as normal files under `Reference/tradivia-finance-v2`. It remains reference only. Finance integration has not started.
+`acf36ce` first tracked that folder as normal files under `Reference/tradivia-finance-v2`.
 
-Do not start Unigate from that schema. Do not import its auth. Do not merge its tables now. Versions were aligned (Nest 11, Prisma 6.19.3, TypeScript 5.9.3) so a later merge is less painful. Do not upgrade Prisma to 8 for the foundation.
+The separate finance repository is frozen since 22 October 2026. `Reference/erp-finance` is now the live finance source until it moves into `uni-gate` in phase F3. Finance preparation (plan section 4) is done there by the finance owner, inside this repository.
+
+Do not start Unigate from that schema. Do not import its auth. Merge finance tables only in phase F2, following the approved plan. Versions were aligned (Nest 11, Prisma 6.19.3, TypeScript 5.9.3) so a later merge is less painful. Do not upgrade Prisma to 8 for the foundation.
 
 ---
 
@@ -341,7 +345,11 @@ Results on 21 October 2026 (Linux, PostgreSQL 16 on port 5433): `tsc --noEmit` f
 
 ## Working method
 
-For every phase: preflight first (`git status`, PostgreSQL on port 5433, existing tests pass), then implement, run all checks, then STOP and report. Never commit or start the next phase before the user manually accepts. Implement on a branch named `phase-N-...`, stage explicit paths only, and merge through a pull request.
+From 22 October 2026: Claude plans and writes the phase specification. Claude Code builds it. Cursor is no longer used. A separate Claude Code reviewer, who did not build the phase, reviews the branch. The user tests manually before every merge. For each phase, give the user a plain Arabic explanation of what was done, plus manual test steps with the expected result.
+
+For every phase: preflight first (`git status`, PostgreSQL on port 5433, existing tests pass), then implement, run all checks, then STOP and report. Never merge or start the next phase before the user manually accepts. Implement on a branch named `phase-...` (for example `phase-f1-role-permissions`), stage explicit paths only, and merge through a pull request.
+
+Division of work: the finance owner (the user's colleague) owns finance code. The user and Claude own everything else. Changes where finance meets the foundation are reviewed by both.
 
 ## Known follow-ups for Phase 10
 
@@ -356,18 +364,18 @@ Still open:
 3. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
 4. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
 5. `POST /api/auth/password` does not count wrong current passwords toward the lockout.
-6. Role scope and membership location agree through application locks, not a database constraint. Consider a database rule before finance relies on scope.
-7. An `ALL_BRANCHES` manager can still manage another `ALL_BRANCHES` manager. Confirm with the user whether that is wanted.
+6. Role scope and membership location agree through application locks, not a database constraint. Planned as a database rule in phase F1.
+7. An `ALL_BRANCHES` manager can manage another `ALL_BRANCHES` manager. The user confirmed this is wanted (22 October 2026).
 
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree.
-2. The next work is the finance merge, planned in `docs/FINANCE_MERGE_PLAN.md`. Status: draft. Decisions in section 3 of that plan must be approved before any merge code.
-3. Do not write finance merge code, a write route to the audit list, or a customer-facing audit before that approval. The user chooses the scope.
+2. The next work is phase F1 in `docs/FINANCE_MERGE_PLAN.md` section 5, then foundation Phase 11. The decisions in section 3 of that plan are approved and binding.
+3. Do not write code for a later phase, a write route to the audit list, or a customer-facing audit before the user asks. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
 6. Branch data is already `Location` in PostgreSQL. Do not put branch lists back in `ug_mock_db`. Keep branch-name uniqueness case-sensitive unless the user changes that rule. Do not make an inactive location block login unless the user asks for that rule.
-7. Roles are already PostgreSQL-backed. Do not put role lists back in `ug_mock_db`. Do not let members create or edit roles. Do not increment `authVersion` for a role edit. Do not treat approval flags as a finance workflow.
+7. Roles are already PostgreSQL-backed. Do not put role lists back in `ug_mock_db`. Members create and edit roles and branches only from Phase 11, under decision L of the plan. Do not increment `authVersion` for a role edit. Approval flags drive the finance approval workflow only from phase F3, under decision B.
 8. Customer users are already PostgreSQL-backed. Do not put them back in `ug_mock_db`. Do not let a member change their own role, branch, or status, or reset their own password, through the user administration routes.
 9. Company modules are already PostgreSQL-backed. Do not put module flags back in `ug_mock_db`. Do not let a member toggle `enabled`. Do not store `ready` per company. Do not increment `authVersion` for a module change. A missing row stays disabled until a `PUT` supplies that key.
 10. The platform audit list is already PostgreSQL-backed and read-only. Do not put it back in `ug_mock_db`. Do not add a write route. Do not show it to members.
@@ -378,19 +386,20 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 
 ## DO NOT DO
 
-- Do not start Phase 10 until the user explicitly says so.
+- Do not start a phase until the user explicitly says so.
 - Do not add a write route to the audit list, and do not show the audit list to members.
 - Do not let a member toggle a company module.
 - Do not put module flags back in `ug_mock_db`.
 - Do not let a member change their own role, branch, or status, or reset their own password, through the user administration routes.
 - Do not create a customer user inside company bootstrap unless the user asks for that.
-- Do not let a member create or edit a role.
+- Do not let a member create or edit a role or a branch before Phase 11.
 - Do not increment `authVersion` when only role permissions change.
-- Do not implement finance approval from `editRequiresApproval` or `deleteRequiresApproval`.
+- Do not implement finance approval from `editRequiresApproval` or `deleteRequiresApproval` before phase F3. Nobody approves their own request.
 - Do not treat an inactive location as a login block unless the user asks for that rule.
 - Do not make branch names case-insensitive unless the user changes that rule.
 - Do not treat `ug_support_company` as support authority.
-- Do not start Finance integration.
+- Do not write finance merge code outside the approved phases in `docs/FINANCE_MERGE_PLAN.md`.
+- Do not give platform operators write access to module business data (finance and later modules). They read only.
 - Do not copy the TRADIVIA Prisma schema or its `Employee` login model.
 - Do not trust client-supplied company context.
 - Do not replace approved architecture silently.
