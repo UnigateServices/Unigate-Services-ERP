@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, PermissionLevel as DbPermissionLevel, Prisma, VisibilityScope } from '@prisma/client';
 import { ErrorCode, atLeast, type PermissionArea, type PermissionLevel, type PermissionMap } from '@unigate/shared';
-import { accessFor, toPermissionMap } from '../auth/access';
+import { accessFor, requireCompanyAdmin, toPermissionMap, withinLevels } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -43,6 +43,12 @@ type RoleInput = {
   permissions?: PermissionInput[];
 };
 
+/**
+ * Runs inside the write transaction, after the change and before commit. Throwing rolls it back.
+ * `before` is null for a new role.
+ */
+type RoleGuard = (before: PermissionMap | null, after: PermissionMap, roleId: string) => void;
+
 const roleSelect = {
   id: true,
   key: true,
@@ -68,7 +74,18 @@ export class RolesService {
     return { items: rows.map(toPlatformRole) };
   }
 
-  async create(companyId: string, input: RoleInput, actorUserId: string): Promise<PlatformRoleDto> {
+  /** Phase 11: a member with roles WRITE and all-branch scope creates roles in the session company. */
+  async createForSession(auth: RequestAuth, input: RoleInput): Promise<RoleDto> {
+    const access = requireCompanyAdmin(auth, 'roles');
+    return stripCompany(await this.create(access.companyId, input, auth.userId, memberGuard(auth)));
+  }
+
+  async updateForSession(auth: RequestAuth, roleId: string, input: RoleInput): Promise<RoleDto> {
+    const access = requireCompanyAdmin(auth, 'roles');
+    return stripCompany(await this.update(access.companyId, roleId, input, auth.userId, memberGuard(auth)));
+  }
+
+  async create(companyId: string, input: RoleInput, actorUserId: string, guard?: RoleGuard): Promise<PlatformRoleDto> {
     const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -76,15 +93,23 @@ export class RolesService {
         await this.assertKeyAvailable(tx, companyId, fields.key);
         const created = await tx.role.create({ data: { companyId, ...fields }, select: { id: true } });
         if (permissions?.length) await applyPermissions(tx, companyId, created.id, permissions);
+        const role = await this.loadRole(tx, companyId, created.id);
+        guard?.(null, toPermissionMap(role.permissions), role.id);
         await this.audit(tx, actorUserId, companyId, created.id, AuditAction.CREATE);
-        return toPlatformRole(await this.loadRole(tx, companyId, created.id));
+        return toPlatformRole(role);
       });
     } catch (error) {
       this.rethrowKnown(error);
     }
   }
 
-  async update(companyId: string, roleId: string, input: RoleInput, actorUserId: string): Promise<PlatformRoleDto> {
+  async update(
+    companyId: string,
+    roleId: string,
+    input: RoleInput,
+    actorUserId: string,
+    guard?: RoleGuard,
+  ): Promise<PlatformRoleDto> {
     const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -95,6 +120,7 @@ export class RolesService {
           select: { id: true, visibilityScope: true },
         });
         if (!existing) throw this.roleNotFound();
+        const before = toPermissionMap(await tx.rolePermission.findMany({ where: { companyId, roleId } }));
         if (existing.visibilityScope !== fields.visibilityScope) {
           await this.assertScopeCompatible(tx, roleId, fields.visibilityScope);
         }
@@ -104,8 +130,10 @@ export class RolesService {
           data: fields,
         });
         if (permissions?.length) await applyPermissions(tx, companyId, roleId, permissions);
+        const role = await this.loadRole(tx, companyId, roleId);
+        guard?.(before, toPermissionMap(role.permissions), roleId);
         await this.audit(tx, actorUserId, companyId, roleId, AuditAction.UPDATE);
-        return toPlatformRole(await this.loadRole(tx, companyId, roleId));
+        return toPlatformRole(role);
       });
     } catch (error) {
       this.rethrowKnown(error);
@@ -219,6 +247,32 @@ export class RolesService {
     if (isScopeMismatch(error)) throw this.scopeConflict();
     throw error;
   }
+}
+
+/**
+ * Decision L for members. A platform operator is not limited here.
+ * - Nobody changes the role they hold, so a company can never lock its own administrators out.
+ * - Nobody touches a role that is above them in any area, or raises one above themselves.
+ */
+function memberGuard(auth: RequestAuth): RoleGuard | undefined {
+  const membership = auth.actor === 'member' ? auth.membership : null;
+  if (!membership) return undefined;
+  return (before, after, roleId) => {
+    if (roleId === membership.roleId) {
+      throw new ConflictException({ code: ErrorCode.CONFLICT, message: 'You cannot change your own role.' });
+    }
+    if ((before && !withinLevels(membership.permissions, before)) || !withinLevels(membership.permissions, after)) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'A role cannot have more permissions than yours.',
+      });
+    }
+  };
+}
+
+function stripCompany(role: PlatformRoleDto): RoleDto {
+  const { companyId: _companyId, ...rest } = role;
+  return rest;
 }
 
 /**

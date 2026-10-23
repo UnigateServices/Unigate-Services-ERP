@@ -14,6 +14,7 @@ import {
   MODULE_AREAS,
   PERMISSION_LEVELS,
   allowedLevels,
+  atLeast,
   type PermissionArea,
   type PermissionLevel,
   type PermissionMap,
@@ -39,17 +40,21 @@ import {
   type CustomerUser,
 } from '@/services/users';
 import {
+  createCustomerRole,
   createPlatformRole,
   listCustomerRoles,
   listPlatformRoles,
+  updateCustomerRole,
   updatePlatformRole,
   type CompanyRole,
 } from '@/services/roles';
 import { getPlatformCompany } from '@/services/platform-companies';
 import {
+  createCustomerLocation,
   createPlatformLocation,
   listCustomerLocations,
   listPlatformLocations,
+  updateCustomerLocation,
   updatePlatformLocation,
   type Branch,
 } from '@/services/locations';
@@ -360,11 +365,15 @@ export function BranchFormScreen({
     setSaving(true);
     setError('');
     const result = existing
-      ? await updatePlatformLocation(companyId, existing.id, { name: name.trim(), status })
-      : await createPlatformLocation(companyId, name.trim());
+      ? chrome === 'app'
+        ? await updateCustomerLocation(existing.id, { name: name.trim(), status })
+        : await updatePlatformLocation(companyId, existing.id, { name: name.trim(), status })
+      : chrome === 'app'
+        ? await createCustomerLocation(name.trim())
+        : await createPlatformLocation(companyId, name.trim());
     setSaving(false);
     if (!result.ok) {
-      setError(result.code === 'NAME_TAKEN' ? messages.nameTaken : messages.network);
+      setError(result.code === 'NAME_TAKEN' ? messages.nameTaken : result.code === 'FORBIDDEN' ? messages.forbidden : messages.network);
       return;
     }
     router.push(base);
@@ -374,7 +383,9 @@ export function BranchFormScreen({
     if (!session || !existing || saving) return;
     setSaving(true);
     setError('');
-    const result = await updatePlatformLocation(companyId, existing.id, { name: existing.name, status: 'INACTIVE' });
+    const input = { name: existing.name, status: 'INACTIVE' as const };
+    const result =
+      chrome === 'app' ? await updateCustomerLocation(existing.id, input) : await updatePlatformLocation(companyId, existing.id, input);
     setSaving(false);
     setConfirm(false);
     if (!result.ok) {
@@ -1006,7 +1017,12 @@ export function RoleFormScreen({
   }, [chrome, companyId, messages.network, roleId]);
 
   if (!session || !ready) return <p role="status">{messages.checking}</p>;
-  const writable = canEditRoles(session);
+  // A member never edits the role they hold, or a role above them in any area (decision L).
+  const ownRole = session.actor === 'member' && existing !== null && existing.key === session.roleKey;
+  const ceiling = session.actor === 'member' ? session.permissions : null;
+  const aboveYou =
+    ceiling !== null && existing !== null && (Object.keys(existing.permissions) as PermissionArea[]).some((area) => !atLeast(ceiling[area], existing.permissions[area]));
+  const writable = canEditRoles(session) && !ownRole && !aboveYou;
   if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
   const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
   const base = chrome === 'platform' ? `/platform/companies/${companyId}/roles` : '/app/roles';
@@ -1028,12 +1044,17 @@ export function RoleFormScreen({
       permissions: (Object.keys(permissions) as PermissionArea[]).map((area) => ({ area, level: permissions[area] })),
     };
     const result = existing
-      ? await updatePlatformRole(companyId, existing.id, input)
-      : await createPlatformRole(companyId, input);
+      ? chrome === 'app'
+        ? await updateCustomerRole(existing.id, input)
+        : await updatePlatformRole(companyId, existing.id, input)
+      : chrome === 'app'
+        ? await createCustomerRole(input)
+        : await createPlatformRole(companyId, input);
     setSaving(false);
     if (!result.ok) {
       if (result.code === 'KEY_TAKEN') setError(messages.keyTaken);
       else if (result.code === 'CONFLICT') setError(messages.scopeConflict);
+      else if (result.code === 'FORBIDDEN') setError(messages.roleAboveYou);
       else if (result.code === 'VALIDATION_ERROR') setError(messages.roleKeyInvalid);
       else setError(messages.network);
       return;
@@ -1052,7 +1073,9 @@ export function RoleFormScreen({
       {blocked ? <p>{missing ? messages.notFound : messages.forbidden}</p> : null}
       {!loadError && !missing && (existing || writable) ? (
         <>
-          {!writable ? <InlineAlert tone="info" message={messages.rolesReadOnly} /> : null}
+          {!writable ? (
+            <InlineAlert tone="info" message={ownRole ? messages.ownRoleReadOnly : aboveYou ? messages.roleAboveYou : messages.rolesReadOnly} />
+          ) : null}
           <form className="stack-form" onSubmit={onSubmit} noValidate>
             <FormField id="role-name" label={messages.name} required error={error}>
               <input id="role-name" value={name} disabled={!writable || saving} onChange={(event) => setName(event.target.value)} />
@@ -1080,6 +1103,7 @@ export function RoleFormScreen({
             </fieldset>
             <PermissionMatrix
               value={permissions}
+              ceiling={ceiling}
               disabled={!writable || saving}
               onChange={(area, level) => setPermissions((current) => ({ ...current, [area]: level }))}
             />
@@ -1099,10 +1123,13 @@ function emptyPermissions(): PermissionMap {
 
 function PermissionMatrix({
   value,
+  ceiling,
   disabled,
   onChange,
 }: {
   value: PermissionMap;
+  /** A member may offer levels up to their own only. Null for a platform operator. */
+  ceiling: PermissionMap | null;
   disabled: boolean;
   onChange: (area: PermissionArea, level: PermissionLevel) => void;
 }) {
@@ -1144,7 +1171,11 @@ function PermissionMatrix({
                       value={value[area]}
                       onChange={(event) => onChange(area, event.target.value as PermissionLevel)}
                     >
-                      {PERMISSION_LEVELS.filter((level) => allowedLevels(area).includes(level)).map((level) => (
+                      {PERMISSION_LEVELS.filter(
+                        (level) =>
+                          allowedLevels(area).includes(level) &&
+                          (ceiling === null || atLeast(ceiling[area], level) || level === value[area]),
+                      ).map((level) => (
                         <option key={level} value={level}>
                           {levelLabel(level)}
                         </option>

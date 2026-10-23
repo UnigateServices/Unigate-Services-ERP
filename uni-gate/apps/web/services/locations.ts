@@ -65,3 +65,24 @@ export async function listCustomerLocations() {
     return failed(0, null);
   }
 }
+
+/** Phase 11: company comes from the session. Needs branches Write and all-branch scope. */
+export async function createCustomerLocation(name: string) {
+  try {
+    const { status, body } = await api<Branch>('/api/locations', { method: 'POST', body: { name } });
+    if ((status !== 200 && status !== 201) || !body || !('id' in body)) return failed(status, body);
+    return { ok: true as const, branch: body };
+  } catch {
+    return failed(0, null);
+  }
+}
+
+export async function updateCustomerLocation(locationId: string, input: { name: string; status: 'ACTIVE' | 'INACTIVE' }) {
+  try {
+    const { status, body } = await api<Branch>(`/api/locations/${locationId}`, { method: 'PATCH', body: input });
+    if (status !== 200 || !body || !('id' in body)) return failed(status, body);
+    return { ok: true as const, branch: body };
+  } catch {
+    return failed(0, null);
+  }
+}

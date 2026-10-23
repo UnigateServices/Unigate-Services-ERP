@@ -1,7 +1,7 @@
 import { ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, Prisma, RecordStatus, VisibilityScope } from '@prisma/client';
 import { ErrorCode, atLeast } from '@unigate/shared';
-import { accessFor, requireAccess } from '../auth/access';
+import { accessFor, requireAccess, requireCompanyAdmin } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,6 +78,21 @@ export class LocationsService {
     } catch (error) {
       this.rethrowNameTaken(error);
     }
+  }
+
+  /** Phase 11: a member with branches WRITE and all-branch scope creates branches in the session company. */
+  async createForSession(auth: RequestAuth, name: string): Promise<LocationDto> {
+    const access = requireCompanyAdmin(auth, 'branches');
+    return toCustomerLocation(await this.create(access.companyId, name, auth.userId));
+  }
+
+  async updateForSession(
+    auth: RequestAuth,
+    locationId: string,
+    input: { name: string; status: 'ACTIVE' | 'INACTIVE' },
+  ): Promise<LocationDto> {
+    const access = requireCompanyAdmin(auth, 'branches');
+    return toCustomerLocation(await this.update(access.companyId, locationId, input, auth.userId));
   }
 
   async listForSession(auth: RequestAuth) {

@@ -79,3 +79,24 @@ export async function listCustomerRoles() {
     return failed(0, null);
   }
 }
+
+/** Phase 11: company comes from the session. Needs roles Write and all-branch scope. */
+export async function createCustomerRole(input: RoleInput) {
+  try {
+    const { status, body } = await api<CompanyRole>('/api/roles', { method: 'POST', body: input });
+    if ((status !== 200 && status !== 201) || !body || !('id' in body)) return failed(status, body);
+    return { ok: true as const, role: body };
+  } catch {
+    return failed(0, null);
+  }
+}
+
+export async function updateCustomerRole(roleId: string, input: RoleInput) {
+  try {
+    const { status, body } = await api<CompanyRole>(`/api/roles/${roleId}`, { method: 'PATCH', body: input });
+    if (status !== 200 || !body || !('id' in body)) return failed(status, body);
+    return { ok: true as const, role: body };
+  } catch {
+    return failed(0, null);
+  }
+}

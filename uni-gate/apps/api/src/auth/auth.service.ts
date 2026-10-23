@@ -15,6 +15,7 @@ const MAX_FAILURES = 5;
 
 export type MemberContext = {
   membershipId: string;
+  roleId: string;
   companyId: string;
   companyName: string;
   companyCode: string;
@@ -170,6 +171,7 @@ export class AuthService {
       name: user.name,
       membership: {
         membershipId: membership.id,
+        roleId: membership.role.id,
         companyId: membership.company.id,
         companyName: membership.company.name,
         companyCode: membership.company.code,

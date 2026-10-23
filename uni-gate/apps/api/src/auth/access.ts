@@ -80,6 +80,23 @@ export function accessFor(auth: RequestAuth, area: PermissionArea): AreaAccess {
   };
 }
 
+/**
+ * Company administration that changes structure (create or edit branches, roles, permissions)
+ * needs the level and the ALL_BRANCHES scope. A platform operator in support always has both.
+ */
+export function requireCompanyAdmin(auth: RequestAuth, area: 'branches' | 'roles'): AreaAccess {
+  const access = requireAccess(auth, area, 'WRITE');
+  if (access.visibility !== VisibilityScope.ALL_BRANCHES) {
+    throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'This needs access to all branches.' });
+  }
+  return access;
+}
+
+/** True when every area in `next` is at or below the same area in `ceiling`. */
+export function withinLevels(ceiling: PermissionMap, next: PermissionMap) {
+  return (Object.keys(next) as PermissionArea[]).every((area) => atLeast(ceiling[area], next[area]));
+}
+
 /** Same as accessFor, and refuses with 403 FORBIDDEN below `minimum`. */
 export function requireAccess(auth: RequestAuth, area: PermissionArea, minimum: PermissionLevel): AreaAccess {
   const access = accessFor(auth, area);
