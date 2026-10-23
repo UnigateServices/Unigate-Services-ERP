@@ -6,6 +6,21 @@
 -- 4. A trigger keeps role scope and membership location in agreement. Until now only
 --    application locks enforced that.
 
+-- Runs first, before any change: stop if existing data already breaks the scope rule
+-- enforced at the end of this file. Fix those memberships, then run the migration again.
+DO $$
+DECLARE
+  bad integer;
+BEGIN
+  SELECT count(*) INTO bad
+  FROM "memberships" m JOIN "roles" r ON r."id" = m."role_id"
+  WHERE (r."visibility_scope" = 'ALL_BRANCHES' AND m."location_id" IS NOT NULL)
+     OR (r."visibility_scope" <> 'ALL_BRANCHES' AND m."location_id" IS NULL);
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'ROLE_SCOPE_MISMATCH: % membership(s) do not match their role scope. Fix them before this migration.', bad;
+  END IF;
+END $$;
+
 -- CreateEnum
 CREATE TYPE "PermissionLevel" AS ENUM ('NONE', 'READ', 'WRITE', 'APPROVE', 'ADMIN');
 

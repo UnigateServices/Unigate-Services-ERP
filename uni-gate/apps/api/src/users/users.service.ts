@@ -325,6 +325,20 @@ export class UsersService {
         message: 'This role is outside your scope.',
       });
     }
+    // Decision L: a member never grants a role above their own level in any area.
+    const actorPermissions = scope.auth.actor === 'member' ? scope.auth.membership?.permissions : undefined;
+    if (actorPermissions && !keepsOwnRole) {
+      const rolePermissions = toPermissionMap(role.permissions);
+      const above = (Object.keys(rolePermissions) as (keyof typeof rolePermissions)[]).some(
+        (area) => !atLeast(actorPermissions[area], rolePermissions[area]),
+      );
+      if (above) {
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: 'This role has more permissions than yours.',
+        });
+      }
+    }
     if (role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
       if (locationId) {
         throw new BadRequestException({

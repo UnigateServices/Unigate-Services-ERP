@@ -949,7 +949,7 @@ export function RoleFormScreen({
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [scope, setScope] = useState<VisibilityScope>('BRANCH');
-  const [permissions, setPermissions] = useState<PermissionMap>(emptyPermissions);
+  const [permissions, setPermissions] = useState<PermissionMap>(() => ({ ...emptyPermissions(), branches: 'READ' }));
   const [editApproval, setEditApproval] = useState(false);
   const [deleteApproval, setDeleteApproval] = useState(false);
   const [existing, setExisting] = useState<CompanyRole | null>(null);

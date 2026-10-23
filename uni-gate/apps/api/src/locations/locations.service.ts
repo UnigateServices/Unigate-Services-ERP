@@ -1,7 +1,7 @@
 import { ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, Prisma, RecordStatus, VisibilityScope } from '@prisma/client';
-import { ErrorCode } from '@unigate/shared';
-import { requireAccess } from '../auth/access';
+import { ErrorCode, atLeast } from '@unigate/shared';
+import { accessFor, requireAccess } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -81,7 +81,10 @@ export class LocationsService {
   }
 
   async listForSession(auth: RequestAuth) {
-    const companyId = requireAccess(auth, 'branches', 'READ').companyId;
+    // branches READ, or users WRITE: a user manager picks branches in the user form.
+    const branches = accessFor(auth, 'branches');
+    if (!atLeast(branches.level, 'READ')) requireAccess(auth, 'users', 'WRITE');
+    const companyId = branches.companyId;
     const locationId = this.visibleLocationId(auth);
     if (locationId === null) return { items: [] as LocationDto[] };
     const rows = await this.prisma.location.findMany({

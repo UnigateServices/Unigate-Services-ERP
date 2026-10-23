@@ -98,6 +98,77 @@ describe('role permissions (phase F1)', () => {
     expect((await prisma.user.findFirstOrThrow({ where: { membership: { username: 'watcher' } } })).authVersion).toBe(version);
   });
 
+  it('refuses edits and password resets for a member with users READ', async () => {
+    await platformUser();
+    const cookie = await loginPlatform();
+    const alpha = await createCompany(cookie, 'Alpha', 'alpha', 'tradivia');
+    const home = (await prisma.location.findFirstOrThrow({ where: { companyId: alpha.id } })).id;
+    const monitorCookie = await loginMember('alpha', await member(alpha.id, 'watcher', 'MONITOR', null));
+    await member(alpha.id, 'clerk', 'EMPLOYEE', home);
+    const clerk = await prisma.membership.findFirstOrThrow({ where: { username: 'clerk' }, include: { user: true } });
+    await request(app.getHttpServer()).get(`/api/users/${clerk.userId}`).set('Cookie', monitorCookie).expect(200);
+    const patched = await request(app.getHttpServer())
+      .patch(`/api/users/${clerk.userId}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', monitorCookie)
+      .send({ name: 'Changed', username: 'clerk', email: null, phone: null, status: 'ACTIVE', roleId: clerk.roleId, locationId: home })
+      .expect(403);
+    expect(patched.body.code).toBe('FORBIDDEN');
+    await request(app.getHttpServer())
+      .post(`/api/users/${clerk.userId}/password`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', monitorCookie)
+      .send({ password: 'Secret123' })
+      .expect(403);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: clerk.userId } })).name).toBe('clerk');
+  });
+
+  it('does not let a member assign a role above their own levels', async () => {
+    await platformUser();
+    const cookie = await loginPlatform();
+    const alpha = await createCompany(cookie, 'Alpha', 'alpha', 'tradivia');
+    const home = (await prisma.location.findFirstOrThrow({ where: { companyId: alpha.id } })).id;
+    const supervisorCookie = await loginMember('alpha', await member(alpha.id, 'lead', 'SUPERVISOR', home));
+    const employee = await role(alpha.id, 'EMPLOYEE');
+    const strong = await request(app.getHttpServer())
+      .post(`/api/platform/companies/${alpha.id}/roles`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie)
+      .send({
+        name: 'Strong clerk',
+        key: 'STRONG_CLERK',
+        visibilityScope: 'OWN',
+        editRequiresApproval: false,
+        deleteRequiresApproval: false,
+        permissions: [{ area: 'branches', level: 'READ' }, { area: 'finance', level: 'ADMIN' }],
+      })
+      .expect(201);
+    const body = (roleId: string, username: string) => ({
+      name: username, username, password: 'Secret123', email: null, phone: null, roleId, locationId: home,
+    });
+    // The supervisor holds finance APPROVE, so a role with finance ADMIN is refused.
+    const refused = await request(app.getHttpServer())
+      .post('/api/users')
+      .set('Origin', ORIGIN)
+      .set('Cookie', supervisorCookie)
+      .send(body(strong.body.id, 'strong'))
+      .expect(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(await prisma.membership.count({ where: { username: 'strong' } })).toBe(0);
+    // A role at or below the supervisor's levels is fine.
+    await request(app.getHttpServer()).post('/api/users').set('Origin', ORIGIN).set('Cookie', supervisorCookie).send(body(employee.id, 'plain')).expect(201);
+  });
+
+  it('lets a user manager without branch access list branches for the user form', async () => {
+    await platformUser();
+    const cookie = await loginPlatform();
+    const alpha = await createCompany(cookie, 'Alpha', 'alpha', 'tradivia');
+    const manager = await role(alpha.id, 'GENERAL_MANAGER');
+    await patchRole(cookie, alpha.id, manager.id, roleFrom(manager, [{ area: 'branches', level: 'NONE' }])).expect(200);
+    const chiefCookie = await loginMember('alpha', await member(alpha.id, 'chief', 'GENERAL_MANAGER', null));
+    await request(app.getHttpServer()).get('/api/locations').set('Cookie', chiefCookie).expect(200);
+  });
+
   it('refuses invalid permission lists', async () => {
     await platformUser();
     const cookie = await loginPlatform();

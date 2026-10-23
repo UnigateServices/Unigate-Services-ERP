@@ -353,7 +353,9 @@ Results on 21 October 2026 (Linux, PostgreSQL 16 on port 5433): `tsc --noEmit` f
 - Every permission check goes through `apps/api/src/auth/access.ts`: `accessFor(auth, area)` returns the level, scope, location, membership id, and approval flags for the session company; `requireAccess(auth, area, minimum)` refuses with `403 FORBIDDEN`. Do not compare role keys in code.
 - Permissions are read from PostgreSQL on every request (with the role), so a change applies on the next request. `authVersion` does not change.
 - Platform operator in support: `WRITE` in administration areas, `READ` in every module (`platformSupportPermissions`). Outside support, `/api/auth/me` returns `permissions: null`.
-- Routes: `GET /api/users` and `GET /api/users/:id` need `users >= READ`; create, edit, and password reset need `users >= WRITE`. `GET /api/locations` needs `branches >= READ`. `GET /api/roles` needs `roles >= READ` or `users >= WRITE`. A branch-scoped manager still cannot reach or assign a role with `users >= WRITE`.
+- Routes: `GET /api/users` and `GET /api/users/:id` need `users >= READ`; create, edit, and password reset need `users >= WRITE`. `GET /api/locations` needs `branches >= READ` or `users >= WRITE` (a user manager picks branches in the user form). `GET /api/roles` needs `roles >= READ` or `users >= WRITE`. A branch-scoped manager still cannot reach or assign a role with `users >= WRITE`.
+- Decision L is enforced for user assignment: a member cannot create or move a user into a role that is above the member's own level in any area (`403 FORBIDDEN`). Keeping a user's current role is allowed.
+- The migration first checks existing memberships against the scope rule and stops, before changing anything, if any row breaks it.
 - Role routes (`POST`/`PATCH /api/platform/companies/:companyId/roles`) no longer accept `canManageUsers`. They accept optional `permissions: [{ area, level }]`; supplied areas are replaced, others are kept, `NONE` deletes the row. Each area once, levels allowed per area, otherwise `400 VALIDATION_ERROR`. Responses include the full `permissions` map. Members still cannot edit roles or permissions (phase 11).
 - `GET /api/auth/me` returns `permissions` (full map) and, for members, `editRequiresApproval` and `deleteRequiresApproval`.
 - `Membership` has a unique `(companyId, id)` for later composite foreign keys (finance actors, decision A).
@@ -361,7 +363,15 @@ Results on 21 October 2026 (Linux, PostgreSQL 16 on port 5433): `tsc --noEmit` f
 - Presets (`role-presets.ts`) carry permissions; company creation and the development seed write them. The seed resets preset roles and their permissions on every run.
 - Web: the role screen has a permission matrix (administration and modules). Navigation, the dashboard, the branch list, and the user list follow the levels. A user with `users = READ` sees the list without add or edit.
 - `packages/database/prisma/constraint-checks.sql` was brought up to date (it predated `users.name`) and covers the new rules.
-- Results (Linux, PostgreSQL 16, port 5433): `prisma validate` OK, `prisma migrate diff` from the migrated database to the schema: no difference, constraint script 24 PASS, `tsc --noEmit` API and web exit 0, `nest build` and `next build` exit 0, `npm run test:api` 13 suites and 66 tests passed.
+- Results (Linux, PostgreSQL 16, port 5433): `prisma validate` OK, `prisma migrate diff` from the migrated database to the schema: no difference, constraint script 24 PASS, `tsc --noEmit` API and web exit 0, `nest build` and `next build` exit 0, `npm run test:api` 13 suites and 69 tests passed.
+- An independent review found no cross-company leak and no self-escalation. Its fixes are in: the assignment guard above, the branch list for user managers, a new role starting at `branches = READ` in the web form, and the migration pre-check.
+
+Open follow-ups from the F1 review (for phase 11 or later):
+
+1. `users = READ` can open a user through the API (`GET /api/users/:id`), but the web shows the list only. Add a read-only user view if wanted.
+2. User lists treat `OWN` scope like `BRANCH` (pre-existing). A role with `users >= READ` and `OWN` scope sees its branch's staff. Decide whether `OWN` should see only itself.
+3. A role created through the API without `permissions` gets no rows (not even `branches = READ`). The web always sends the full matrix.
+4. `constraint-checks.sql` is not run by any script. Run it by hand with `psql` after a migration.
 
 ## Working method
 
