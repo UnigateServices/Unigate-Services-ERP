@@ -22,7 +22,9 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Accepted and merged:** phase 11 (managers manage branches, roles, and permissions), pull request #8. See "Phase 11" below.
 
-**Next for finance:** the finance owner starts the preparation in `docs/FINANCE_PREP_GUIDE.md` (P0 tests first, then P1 to P4), inside `Reference/erp-finance/`.
+**Changed on 23 October 2026:** the finance owner handed over commit `77ce653` and stopped. The user and Claude do the whole merge (F0 to F5). There is no separate preparation in `Reference/erp-finance/`; the conversions happen while moving code in F3 (`docs/FINANCE_MERGE_PLAN.md` section 4).
+
+**Implemented, waiting for acceptance:** phase F0 (finance safety net), on branch `phase-f0-finance-baseline`. `tools/finance-baseline/scenario.mjs` runs a fixed set of finance operations and records every computed number; `tools/finance-baseline/baseline/original.json` holds the original app's numbers. Every F3 batch must reproduce them. Accounting observations for the manager are in `docs/FINANCE_REVIEW_NOTES.md`; do not change finance behavior during the merge.
 
 **Approved, not started:** phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
 

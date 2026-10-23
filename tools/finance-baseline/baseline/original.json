@@ -1,0 +1,2729 @@
+{
+  "advances": [
+    {
+      "advanceType": "ISSUE",
+      "amount": "400",
+      "attachments": "",
+      "bank": null,
+      "borrower": {
+        "name": "أحمد السلفة"
+      },
+      "currency": "USD",
+      "description": "",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "exchangeRate": null,
+      "fromCurrency": null,
+      "fund": "VAULT",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "project": null,
+      "quantity": null,
+      "receiver": "أحمد",
+      "reference": "AD-YYMMDD-001",
+      "status": "COMPLETED",
+      "toCurrency": null,
+      "total": "400",
+      "transactionDate": "2026-09-13T00:00:00.000Z"
+    },
+    {
+      "advanceType": "OUTCOME",
+      "amount": "120",
+      "attachments": "",
+      "bank": null,
+      "borrower": {
+        "name": "أحمد السلفة"
+      },
+      "currency": "USD",
+      "description": "مصروف من السلفة",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "exchangeRate": null,
+      "fromCurrency": null,
+      "fund": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "AD-YYMMDD-002",
+      "status": "COMPLETED",
+      "toCurrency": null,
+      "total": "120",
+      "transactionDate": "2026-09-15T00:00:00.000Z"
+    },
+    {
+      "advanceType": "RETURN",
+      "amount": "200",
+      "attachments": "",
+      "bank": null,
+      "borrower": {
+        "name": "أحمد السلفة"
+      },
+      "currency": "USD",
+      "description": "",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "exchangeRate": null,
+      "fromCurrency": null,
+      "fund": "VAULT",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 3,
+      "project": null,
+      "quantity": null,
+      "receiver": "",
+      "reference": "AD-YYMMDD-003",
+      "status": "COMPLETED",
+      "toCurrency": null,
+      "total": "200",
+      "transactionDate": "2026-09-16T00:00:00.000Z"
+    }
+  ],
+  "aging": {
+    "asOf": "2026-09-30",
+    "buckets": [
+      {
+        "amount": "0.00",
+        "code": "31-60",
+        "name": "31 إلى 60"
+      },
+      {
+        "amount": "0.00",
+        "code": "61-90",
+        "name": "61 إلى 90"
+      },
+      {
+        "amount": "0.00",
+        "code": "91+",
+        "name": "أكثر من 90"
+      },
+      {
+        "amount": "304.00",
+        "code": "0-30",
+        "name": "حتى 30 يوماً"
+      }
+    ],
+    "gross": true,
+    "lines": [
+      {
+        "bucket": "0-30",
+        "currency": "USD",
+        "days": 10,
+        "documentDate": "2026-09-21",
+        "dueDate": "2026-09-21",
+        "fxRate": null,
+        "kind": "RECEIVABLE",
+        "memo": "",
+        "originalAmount": "304.00",
+        "party": "CUSTOMER",
+        "partyName": "زبون تجريبي",
+        "reference": "SI-YYMMDD-001",
+        "remaining": "104.00",
+        "settlementMode": "CASH",
+        "sourceType": "SALES",
+        "status": "OPEN"
+      },
+      {
+        "bucket": "0-30",
+        "currency": "USD",
+        "days": 14,
+        "documentDate": "2026-09-17",
+        "dueDate": "2026-09-17",
+        "fxRate": null,
+        "kind": "PAYABLE",
+        "memo": "",
+        "originalAmount": "500.00",
+        "party": "SUPPLIER",
+        "partyName": "مورد تجريبي",
+        "reference": "PI-YYMMDD-001",
+        "remaining": "200.00",
+        "settlementMode": "CASH",
+        "sourceType": "PURCHASE",
+        "status": "OPEN"
+      }
+    ],
+    "total": "304.00"
+  },
+  "approvals": [
+    {
+      "actionType": "DELETE",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "newDetails": {},
+      "oldDetails": {
+        "amount": "150",
+        "currency": "USD",
+        "deliverer": "",
+        "description": "قرطاسية",
+        "fund": "VAULT",
+        "fxRate": null,
+        "kind": "outcome",
+        "notes": "",
+        "operationNumber": 2,
+        "projectName": "مشروع عام",
+        "quantity": "1",
+        "receiver": "",
+        "reference": "OUT-YYMMDD-002",
+        "status": "COMPLETED",
+        "total": "150",
+        "transactionDate": "2026-09-06"
+      },
+      "originalReference": "OUT-YYMMDD-002",
+      "reason": "مكرر",
+      "requestStatus": "REJECTED",
+      "requester": {
+        "name": "موظف المكتب 1"
+      },
+      "supervisor": {
+        "name": "مشرف المكتب 1"
+      },
+      "supervisorDecision": "رفض"
+    },
+    {
+      "actionType": "UPDATE",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "newDetails": {
+        "amount": 3600000
+      },
+      "oldDetails": {
+        "amount": "3500000",
+        "currency": "SYP",
+        "description": "إيراد بالليرة",
+        "fund": "VAULT",
+        "fxRate": "13000",
+        "kind": "income",
+        "notes": "",
+        "operationNumber": 2,
+        "projectName": "مشروع عام",
+        "quantity": "1",
+        "receiver": "",
+        "reference": "IN-YYMMDD-002",
+        "sender": "",
+        "status": "COMPLETED",
+        "total": "3500000",
+        "transactionDate": "2026-09-03"
+      },
+      "originalReference": "IN-YYMMDD-002",
+      "reason": "تصحيح المبلغ",
+      "requestStatus": "APPROVED",
+      "requester": {
+        "name": "موظف المكتب 1"
+      },
+      "supervisor": {
+        "name": "مشرف المكتب 1"
+      },
+      "supervisorDecision": "موافقة"
+    }
+  ],
+  "balanceSheet": {
+    "asOf": "2026-09-30",
+    "books": [
+      {
+        "assets": [
+          {
+            "amount": "-198.51",
+            "code": "FX_POSITION",
+            "name": "مركز عملات أجنبية"
+          },
+          {
+            "amount": "104.00",
+            "code": "RECEIVABLES",
+            "name": "ذمم الزبائن"
+          },
+          {
+            "amount": "300.00",
+            "code": "INVENTORY",
+            "name": "المخزون"
+          },
+          {
+            "amount": "6750.00",
+            "code": "CASH",
+            "name": "النقد وما في حكمه"
+          },
+          {
+            "amount": "80.00",
+            "code": "ADVANCES",
+            "name": "عهد وسلف المستلفين"
+          }
+        ],
+        "balanced": true,
+        "currency": "USD",
+        "currentEarnings": "1835.49",
+        "difference": "0.00",
+        "equity": [
+          {
+            "amount": "1835.49",
+            "code": "CURRENT_EARNINGS",
+            "name": "أرباح الفترة"
+          },
+          {
+            "amount": "5000.00",
+            "code": "CAPITAL",
+            "name": "رأس المال"
+          }
+        ],
+        "liabilities": [
+          {
+            "amount": "200.00",
+            "code": "PAYABLES",
+            "name": "ذمم الموردين"
+          }
+        ],
+        "totalAssets": "7035.49",
+        "totalEquity": "6835.49",
+        "totalLiabilities": "200.00"
+      },
+      {
+        "assets": [
+          {
+            "amount": "23190000.00",
+            "code": "CASH",
+            "name": "النقد وما في حكمه"
+          }
+        ],
+        "balanced": true,
+        "currency": "SYP",
+        "currentEarnings": "5850000.00",
+        "difference": "0.00",
+        "equity": [
+          {
+            "amount": "20000000.00",
+            "code": "CAPITAL",
+            "name": "رأس المال"
+          },
+          {
+            "amount": "5850000.00",
+            "code": "CURRENT_EARNINGS",
+            "name": "أرباح الفترة"
+          }
+        ],
+        "liabilities": [
+          {
+            "amount": "-2660000.00",
+            "code": "FX_CLEARING",
+            "name": "وسيط تقييم العملات"
+          }
+        ],
+        "totalAssets": "23190000.00",
+        "totalEquity": "25850000.00",
+        "totalLiabilities": "-2660000.00"
+      }
+    ]
+  },
+  "balances": {
+    "banks": [
+      {
+        "balances": [
+          {
+            "amount": 1500,
+            "currency": "USD"
+          }
+        ],
+        "name": "بنك تجريبي"
+      }
+    ],
+    "custody": [
+      {
+        "balances": [
+          {
+            "amount": 80,
+            "currency": "USD"
+          }
+        ],
+        "name": "أحمد السلفة"
+      }
+    ],
+    "sham": [],
+    "vault": [
+      {
+        "amount": 19690000,
+        "currency": "SYP"
+      },
+      {
+        "amount": 5250,
+        "currency": "USD"
+      }
+    ]
+  },
+  "cashFlow": {
+    "books": [
+      {
+        "adjustments": [],
+        "cashMovement": "23190000.00",
+        "currency": "SYP",
+        "difference": "0.00",
+        "financing": [
+          {
+            "amount": "20000000.00",
+            "code": "CAPITAL",
+            "name": "رأس المال"
+          }
+        ],
+        "financingTotal": "20000000.00",
+        "fxOnCash": "0.00",
+        "investing": [],
+        "investingTotal": "0.00",
+        "method": "INDIRECT",
+        "netChange": "23190000.00",
+        "operating": "3190000.00",
+        "profit": "5850000.00",
+        "reconciled": true,
+        "revaluationExcluded": "0.00",
+        "workingCapital": [
+          {
+            "amount": "-2660000.00",
+            "code": "FX_CLEARING",
+            "name": "وسيط تقييم العملات"
+          }
+        ]
+      },
+      {
+        "adjustments": [],
+        "cashMovement": "6750.00",
+        "currency": "USD",
+        "difference": "0.00",
+        "financing": [
+          {
+            "amount": "5000.00",
+            "code": "CAPITAL",
+            "name": "رأس المال"
+          }
+        ],
+        "financingTotal": "5000.00",
+        "fxOnCash": "0.00",
+        "investing": [
+          {
+            "amount": "198.51",
+            "code": "FX_POSITION",
+            "name": "مركز عملات أجنبية"
+          }
+        ],
+        "investingTotal": "198.51",
+        "method": "INDIRECT",
+        "netChange": "6750.00",
+        "operating": "1551.49",
+        "profit": "1835.49",
+        "reconciled": true,
+        "revaluationExcluded": "0.00",
+        "workingCapital": [
+          {
+            "amount": "-104.00",
+            "code": "RECEIVABLES",
+            "name": "ذمم الزبائن"
+          },
+          {
+            "amount": "-300.00",
+            "code": "INVENTORY",
+            "name": "المخزون"
+          },
+          {
+            "amount": "-80.00",
+            "code": "ADVANCES",
+            "name": "عهد وسلف المستلفين"
+          },
+          {
+            "amount": "200.00",
+            "code": "PAYABLES",
+            "name": "ذمم الموردين"
+          }
+        ]
+      }
+    ],
+    "from": "2026-09-01",
+    "method": "INDIRECT",
+    "to": "2026-09-30"
+  },
+  "equity": {
+    "books": [
+      {
+        "capital": "20000000.00",
+        "closing": "25850000.00",
+        "currency": "SYP",
+        "opening": "0.00",
+        "profit": "5850000.00",
+        "retained": "0.00"
+      },
+      {
+        "capital": "5000.00",
+        "closing": "6835.49",
+        "currency": "USD",
+        "opening": "0.00",
+        "profit": "1835.49",
+        "retained": "0.00"
+      }
+    ],
+    "from": "2026-09-01",
+    "to": "2026-09-30"
+  },
+  "exchanges": [
+    {
+      "amountCurrency": "SYP",
+      "attachments": "",
+      "bank": null,
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "exchangeAmount": "4020000",
+      "exchangeRate": "13400",
+      "exchangeType": "BUY",
+      "fund": "VAULT",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "paidCurrency": "SYP",
+      "receivedCurrency": "USD",
+      "reference": "EX-YYMMDD-001",
+      "status": "COMPLETED",
+      "total": "300",
+      "transactionDate": "2026-09-11T00:00:00.000Z"
+    },
+    {
+      "amountCurrency": "USD",
+      "attachments": "",
+      "bank": null,
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "exchangeAmount": "100",
+      "exchangeRate": "13600",
+      "exchangeType": "SELL",
+      "fund": "VAULT",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "paidCurrency": "USD",
+      "receivedCurrency": "SYP",
+      "reference": "EX-YYMMDD-002",
+      "status": "COMPLETED",
+      "total": "1360000",
+      "transactionDate": "2026-09-12T00:00:00.000Z"
+    }
+  ],
+  "incomes": [
+    {
+      "amount": "1200",
+      "attachments": "",
+      "bank": null,
+      "currency": "USD",
+      "description": "إيراد خدمة",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "IN-YYMMDD-001",
+      "sender": "زبون نقدي",
+      "status": "COMPLETED",
+      "total": "1200",
+      "transactionDate": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "amount": "200",
+      "attachments": "",
+      "bank": null,
+      "currency": "USD",
+      "description": "قبض فاتورة SI-00001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "fund": "VAULT",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "IN-YYMMDD-004",
+      "sender": "زبون تجريبي",
+      "status": "COMPLETED",
+      "total": "200",
+      "transactionDate": "2026-09-25T00:00:00.000Z"
+    },
+    {
+      "amount": "3600000",
+      "attachments": "",
+      "bank": null,
+      "currency": "SYP",
+      "description": "إيراد بالليرة",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": "13000",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "IN-YYMMDD-002",
+      "sender": "",
+      "status": "COMPLETED",
+      "total": "3600000",
+      "transactionDate": "2026-09-03T00:00:00.000Z"
+    },
+    {
+      "amount": "800",
+      "attachments": "",
+      "bank": {
+        "name": "بنك تجريبي"
+      },
+      "currency": "USD",
+      "description": "تحويل بنكي وارد",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "fund": "BANK",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "IN-YYMMDD-003",
+      "sender": "",
+      "status": "COMPLETED",
+      "total": "800",
+      "transactionDate": "2026-09-04T00:00:00.000Z"
+    }
+  ],
+  "ledgerAccounts": [
+    {
+      "code": "1110",
+      "hasChildren": false,
+      "name": "الخزنة",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1120",
+      "hasChildren": false,
+      "name": "شام كاش",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1130",
+      "hasChildren": false,
+      "name": "البنوك",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1150",
+      "hasChildren": false,
+      "name": "مركز عملات أجنبية",
+      "statementLine": "FX_POSITION",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1160",
+      "hasChildren": false,
+      "name": "وسيط تقييم العملات",
+      "statementLine": "FX_CLEARING",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "1200",
+      "hasChildren": false,
+      "name": "ذمم الزبائن",
+      "statementLine": "RECEIVABLES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1210",
+      "hasChildren": false,
+      "name": "مخصص الديون",
+      "statementLine": "ALLOWANCE",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1250",
+      "hasChildren": false,
+      "name": "سلف الموردين",
+      "statementLine": "SUPPLIER_ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1300",
+      "hasChildren": false,
+      "name": "عهد وسلف المستلفين",
+      "statementLine": "ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1400",
+      "hasChildren": false,
+      "name": "المخزون",
+      "statementLine": "INVENTORY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1410",
+      "hasChildren": false,
+      "name": "مخصص هبوط المخزون",
+      "statementLine": "INVENTORY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "2100",
+      "hasChildren": false,
+      "name": "ذمم الموردين",
+      "statementLine": "PAYABLES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "2150",
+      "hasChildren": false,
+      "name": "سلف الزبائن",
+      "statementLine": "CUSTOMER_ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "3100",
+      "hasChildren": false,
+      "name": "رأس المال",
+      "statementLine": "CAPITAL",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "3200",
+      "hasChildren": false,
+      "name": "أرباح محتجزة",
+      "statementLine": "RETAINED",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "3300",
+      "hasChildren": false,
+      "name": "أرصدة افتتاحية",
+      "statementLine": "OPENING_EQUITY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "4100",
+      "hasChildren": false,
+      "name": "المبيعات",
+      "statementLine": "SALES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4200",
+      "hasChildren": false,
+      "name": "أرباح التصريف",
+      "statementLine": "FX_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4210",
+      "hasChildren": false,
+      "name": "أرباح الترجمة",
+      "statementLine": "FX_TRANSLATION_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4220",
+      "hasChildren": false,
+      "name": "فروقات الصرف المحققة",
+      "statementLine": "FX_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4900",
+      "hasChildren": false,
+      "name": "إيرادات أخرى",
+      "statementLine": "OTHER_INCOME",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4910",
+      "hasChildren": false,
+      "name": "فائض المخزون",
+      "statementLine": "OTHER_INCOME",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "5000",
+      "hasChildren": false,
+      "name": "المشتريات",
+      "statementLine": "PURCHASES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5100",
+      "hasChildren": false,
+      "name": "تكلفة المبيعات",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5200",
+      "hasChildren": false,
+      "name": "مصروفات تشغيل",
+      "statementLine": "OPEX",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5300",
+      "hasChildren": false,
+      "name": "خسائر التصريف",
+      "statementLine": "FX_LOSS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5310",
+      "hasChildren": false,
+      "name": "خسائر الترجمة",
+      "statementLine": "FX_TRANSLATION_LOSS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5400",
+      "hasChildren": false,
+      "name": "هبوط قيمة المخزون",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5410",
+      "hasChildren": false,
+      "name": "عجز المخزون",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    }
+  ],
+  "ledgerEntries": [
+    {
+      "description": "استرداد عهدة AD-YYMMDD-003",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "200",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1300",
+            "name": "عهد وسلف المستلفين",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "200",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 15,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "ADVANCE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-16"
+    },
+    {
+      "description": "تحويل TR-YYMMDD-001",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "1000",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1130",
+            "name": "البنوك",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "1000",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 10,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "TRANSFER",
+      "status": "POSTED",
+      "transactionDate": "2026-09-07"
+    },
+    {
+      "description": "تصريف EX-YYMMDD-001",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "300",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "4020000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1150",
+            "name": "مركز عملات أجنبية",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "300",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1160",
+            "name": "وسيط تقييم العملات",
+            "type": "LIABILITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "4020000",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 11,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "EXCHANGE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-11"
+    },
+    {
+      "description": "تصريف EX-YYMMDD-002",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "1360000",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "100",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1150",
+            "name": "مركز عملات أجنبية",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "101.49",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1160",
+            "name": "وسيط تقييم العملات",
+            "type": "LIABILITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "1360000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "4200",
+            "name": "أرباح التصريف",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "1.49",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 12,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "EXCHANGE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-12"
+    },
+    {
+      "description": "دفع OUT-YYMMDD-003",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1130",
+            "name": "البنوك",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "300",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "2100",
+            "name": "ذمم الموردين",
+            "type": "LIABILITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "300",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 17,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OUTCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-18"
+    },
+    {
+      "description": "رصيد افتتاحي OB-YYMMDD-001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "5000",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "3100",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "5000",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 1,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OPENING",
+      "status": "POSTED",
+      "transactionDate": "2026-09-01"
+    },
+    {
+      "description": "رصيد افتتاحي OB-YYMMDD-002",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "20000000",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "3100",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "20000000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 2,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OPENING",
+      "status": "POSTED",
+      "transactionDate": "2026-09-01"
+    },
+    {
+      "description": "سلفة AD-YYMMDD-002",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1300",
+            "name": "عهد وسلف المستلفين",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "120",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "5200",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "120",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 14,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "ADVANCE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-15"
+    },
+    {
+      "description": "صادر OUT-YYMMDD-001",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "1250000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "5200",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "1250000",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 6,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OUTCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-05"
+    },
+    {
+      "description": "صادر OUT-YYMMDD-002",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "150",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "5200",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "150",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 7,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OUTCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-06"
+    },
+    {
+      "description": "صرف عهدة AD-YYMMDD-001",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "400",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1300",
+            "name": "عهد وسلف المستلفين",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "400",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 13,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "ADVANCE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-13"
+    },
+    {
+      "description": "عكس القيد 4",
+      "employee": {
+        "name": "مشرف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "3500000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "4900",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "3500000",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 8,
+      "reversalOf": {
+        "number": 4
+      },
+      "reversedBy": null,
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "<today>"
+    },
+    {
+      "description": "فاتورة بيع SI-00001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1200",
+            "name": "ذمم الزبائن",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "304",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "1400",
+            "name": "المخزون",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "200",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "4100",
+            "name": "المبيعات",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "304",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "5100",
+            "name": "تكلفة المبيعات",
+            "type": "EXPENSE"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "200",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 18,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "SALES",
+      "status": "POSTED",
+      "transactionDate": "2026-09-21"
+    },
+    {
+      "description": "فاتورة شراء PI-00001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1400",
+            "name": "المخزون",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "500",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "2100",
+            "name": "ذمم الموردين",
+            "type": "LIABILITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "500",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 16,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "PURCHASE",
+      "status": "POSTED",
+      "transactionDate": "2026-09-17"
+    },
+    {
+      "description": "قبض IN-YYMMDD-004",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "200",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "1200",
+            "name": "ذمم الزبائن",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "200",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 19,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-25"
+    },
+    {
+      "description": "وارد IN-YYMMDD-001",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "1200",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "4900",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "1200",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 3,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-02"
+    },
+    {
+      "description": "وارد IN-YYMMDD-002",
+      "employee": {
+        "name": "مشرف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "3600000",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "4900",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "3600000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 9,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-03"
+    },
+    {
+      "description": "وارد IN-YYMMDD-002",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "3500000",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "4900",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "3500000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 4,
+      "reversalOf": null,
+      "reversedBy": {
+        "number": 8
+      },
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-03"
+    },
+    {
+      "description": "وارد IN-YYMMDD-003",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1130",
+            "name": "البنوك",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "800",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        },
+        {
+          "account": {
+            "code": "4900",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "800",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": {
+            "name": "مشروع عام"
+          }
+        }
+      ],
+      "number": 5,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "INCOME",
+      "status": "POSTED",
+      "transactionDate": "2026-09-04"
+    }
+  ],
+  "openItems": [
+    {
+      "currency": "USD",
+      "documentDate": "2026-09-13",
+      "dueDate": "2026-09-13",
+      "fxRate": null,
+      "kind": "CUSTODY",
+      "memo": "صرف عهدة",
+      "originalAmount": "400.00",
+      "party": "BORROWER",
+      "partyName": "أحمد السلفة",
+      "reference": "AD-YYMMDD-001",
+      "remaining": "80.00",
+      "settlementMode": "CASH",
+      "sourceType": "ADVANCE",
+      "status": "OPEN"
+    },
+    {
+      "currency": "USD",
+      "documentDate": "2026-09-17",
+      "dueDate": "2026-09-17",
+      "fxRate": null,
+      "kind": "PAYABLE",
+      "memo": "",
+      "originalAmount": "500.00",
+      "party": "SUPPLIER",
+      "partyName": "مورد تجريبي",
+      "reference": "PI-YYMMDD-001",
+      "remaining": "200.00",
+      "settlementMode": "CASH",
+      "sourceType": "PURCHASE",
+      "status": "OPEN"
+    },
+    {
+      "currency": "USD",
+      "documentDate": "2026-09-21",
+      "dueDate": "2026-09-21",
+      "fxRate": null,
+      "kind": "RECEIVABLE",
+      "memo": "",
+      "originalAmount": "304.00",
+      "party": "CUSTOMER",
+      "partyName": "زبون تجريبي",
+      "reference": "SI-YYMMDD-001",
+      "remaining": "104.00",
+      "settlementMode": "CASH",
+      "sourceType": "SALES",
+      "status": "OPEN"
+    }
+  ],
+  "outcomes": [
+    {
+      "amount": "1250000",
+      "attachments": "",
+      "bank": null,
+      "currency": "SYP",
+      "deliverer": "",
+      "description": "إيجار",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": "13000",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "المالك",
+      "reference": "OUT-YYMMDD-001",
+      "status": "COMPLETED",
+      "total": "1250000",
+      "transactionDate": "2026-09-05T00:00:00.000Z"
+    },
+    {
+      "amount": "150",
+      "attachments": "",
+      "bank": null,
+      "currency": "USD",
+      "deliverer": "",
+      "description": "قرطاسية",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "",
+      "reference": "OUT-YYMMDD-002",
+      "status": "COMPLETED",
+      "total": "150",
+      "transactionDate": "2026-09-06T00:00:00.000Z"
+    },
+    {
+      "amount": "300",
+      "attachments": "",
+      "bank": {
+        "name": "بنك تجريبي"
+      },
+      "currency": "USD",
+      "deliverer": "",
+      "description": "دفع فاتورة PI-00001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "fund": "BANK",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "project": {
+        "name": "مشروع عام"
+      },
+      "quantity": "1",
+      "receiver": "مورد تجريبي",
+      "reference": "OUT-YYMMDD-003",
+      "status": "COMPLETED",
+      "total": "300",
+      "transactionDate": "2026-09-18T00:00:00.000Z"
+    }
+  ],
+  "profitLoss": {
+    "books": [
+      {
+        "currency": "SYP",
+        "expenses": [
+          {
+            "amount": "1250000.00",
+            "code": "OPEX",
+            "name": "مصروفات تشغيل"
+          }
+        ],
+        "grossProfit": "0.00",
+        "income": [
+          {
+            "amount": "7100000.00",
+            "code": "OTHER_INCOME",
+            "name": "إيرادات أخرى"
+          }
+        ],
+        "netProfit": "5850000.00",
+        "totalExpense": "1250000.00",
+        "totalIncome": "7100000.00"
+      },
+      {
+        "currency": "USD",
+        "expenses": [
+          {
+            "amount": "200.00",
+            "code": "COGS",
+            "name": "تكلفة المبيعات"
+          },
+          {
+            "amount": "270.00",
+            "code": "OPEX",
+            "name": "مصروفات تشغيل"
+          }
+        ],
+        "grossProfit": "104.00",
+        "income": [
+          {
+            "amount": "1.49",
+            "code": "FX_GAIN",
+            "name": "أرباح التصريف"
+          },
+          {
+            "amount": "2000.00",
+            "code": "OTHER_INCOME",
+            "name": "إيرادات أخرى"
+          },
+          {
+            "amount": "304.00",
+            "code": "SALES",
+            "name": "المبيعات"
+          }
+        ],
+        "netProfit": "1835.49",
+        "totalExpense": "470.00",
+        "totalIncome": "2305.49"
+      }
+    ],
+    "from": "2026-09-01",
+    "to": "2026-09-30"
+  },
+  "purchase": {
+    "balance": "200",
+    "currency": "USD",
+    "discount": "0",
+    "employeeName": "المدير العام",
+    "fxRate": null,
+    "lines": [
+      {
+        "discount": "0",
+        "lineTotal": "500",
+        "productName": "منتج أ",
+        "quantity": "10",
+        "sku": "P-A",
+        "unit": "PIECE",
+        "unitPrice": "50"
+      }
+    ],
+    "locationName": "المكتب الأول",
+    "notes": "",
+    "number": "PI-00001",
+    "paid": "300",
+    "paymentState": "PARTIAL",
+    "payments": [
+      {
+        "amount": "300",
+        "employeeName": "المدير العام",
+        "fund": "BANK",
+        "outcomeReference": "OUT-YYMMDD-003",
+        "reason": "",
+        "status": "POSTED",
+        "transactionDate": "2026-09-18"
+      }
+    ],
+    "reference": "PI-YYMMDD-001",
+    "status": "POSTED",
+    "subtotal": "500",
+    "supplierName": "مورد تجريبي",
+    "total": "500",
+    "transactionDate": "2026-09-17",
+    "voidReason": "",
+    "voidedByName": "",
+    "warehouseName": "المستودع الرئيسي"
+  },
+  "sale": {
+    "balance": "104",
+    "currency": "USD",
+    "customerName": "زبون تجريبي",
+    "customerReference": "",
+    "discount": "0",
+    "discountMode": "AMOUNT",
+    "discountRate": "0",
+    "dueDate": "2026-10-21",
+    "employeeName": "المدير العام",
+    "fxRate": null,
+    "lines": [
+      {
+        "discount": "16",
+        "discountMode": "PERCENT",
+        "discountRate": "5",
+        "lineTotal": "304",
+        "productName": "منتج أ",
+        "quantity": "4",
+        "sku": "P-A",
+        "unit": "PIECE",
+        "unitPrice": "80"
+      }
+    ],
+    "locationName": "المكتب الأول",
+    "notes": "",
+    "number": "SI-00001",
+    "paid": "200",
+    "paymentState": "PARTIAL",
+    "payments": [
+      {
+        "amount": "200",
+        "employeeName": "المدير العام",
+        "fund": "VAULT",
+        "incomeReference": "IN-YYMMDD-004",
+        "reason": "",
+        "status": "POSTED",
+        "transactionDate": "2026-09-25"
+      }
+    ],
+    "reference": "SI-YYMMDD-001",
+    "status": "POSTED",
+    "subtotal": "304",
+    "total": "304",
+    "transactionDate": "2026-09-21",
+    "voidReason": "",
+    "voidedByName": "",
+    "warehouseName": "المستودع الرئيسي"
+  },
+  "seenBy": {
+    "employee1": {
+      "banks": [
+        {
+          "balances": [
+            {
+              "amount": 1000,
+              "currency": "USD"
+            }
+          ],
+          "name": "بنك تجريبي"
+        }
+      ],
+      "custody": [
+        {
+          "balances": [
+            {
+              "amount": 80,
+              "currency": "USD"
+            }
+          ],
+          "name": "أحمد السلفة"
+        }
+      ],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 19690000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5050,
+          "currency": "USD"
+        }
+      ]
+    },
+    "employee1Incomes": [
+      {
+        "amount": "1200",
+        "attachments": "",
+        "bank": null,
+        "currency": "USD",
+        "description": "إيراد خدمة",
+        "employee": {
+          "name": "موظف المكتب 1"
+        },
+        "fund": "VAULT",
+        "fxRate": null,
+        "location": {
+          "name": "المكتب الأول"
+        },
+        "notes": "",
+        "operationNumber": 1,
+        "project": {
+          "name": "مشروع عام"
+        },
+        "quantity": "1",
+        "receiver": "",
+        "reference": "IN-YYMMDD-001",
+        "sender": "زبون نقدي",
+        "status": "COMPLETED",
+        "total": "1200",
+        "transactionDate": "2026-09-02T00:00:00.000Z"
+      },
+      {
+        "amount": "3600000",
+        "attachments": "",
+        "bank": null,
+        "currency": "SYP",
+        "description": "إيراد بالليرة",
+        "employee": {
+          "name": "موظف المكتب 1"
+        },
+        "fund": "VAULT",
+        "fxRate": "13000",
+        "location": {
+          "name": "المكتب الأول"
+        },
+        "notes": "",
+        "operationNumber": 2,
+        "project": {
+          "name": "مشروع عام"
+        },
+        "quantity": "1",
+        "receiver": "",
+        "reference": "IN-YYMMDD-002",
+        "sender": "",
+        "status": "COMPLETED",
+        "total": "3600000",
+        "transactionDate": "2026-09-03T00:00:00.000Z"
+      }
+    ],
+    "monitor": {
+      "banks": [
+        {
+          "balances": [
+            {
+              "amount": 1500,
+              "currency": "USD"
+            }
+          ],
+          "name": "بنك تجريبي"
+        }
+      ],
+      "custody": [
+        {
+          "balances": [
+            {
+              "amount": 80,
+              "currency": "USD"
+            }
+          ],
+          "name": "أحمد السلفة"
+        }
+      ],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 19690000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5250,
+          "currency": "USD"
+        }
+      ]
+    },
+    "supervisor1": {
+      "banks": [
+        {
+          "balances": [
+            {
+              "amount": 1500,
+              "currency": "USD"
+            }
+          ],
+          "name": "بنك تجريبي"
+        }
+      ],
+      "custody": [
+        {
+          "balances": [
+            {
+              "amount": 80,
+              "currency": "USD"
+            }
+          ],
+          "name": "أحمد السلفة"
+        }
+      ],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 19690000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5250,
+          "currency": "USD"
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "ok": true,
+      "step": "advances"
+    },
+    {
+      "ok": true,
+      "step": "approvals"
+    },
+    {
+      "ok": true,
+      "step": "bank"
+    },
+    {
+      "ok": true,
+      "step": "borrower"
+    },
+    {
+      "ok": true,
+      "step": "customer"
+    },
+    {
+      "ok": true,
+      "step": "exchanges"
+    },
+    {
+      "ok": true,
+      "step": "incomes"
+    },
+    {
+      "ok": true,
+      "step": "opening balances"
+    },
+    {
+      "ok": true,
+      "step": "outcomes"
+    },
+    {
+      "ok": true,
+      "step": "product"
+    },
+    {
+      "ok": true,
+      "step": "project"
+    },
+    {
+      "ok": true,
+      "step": "purchase invoice"
+    },
+    {
+      "ok": true,
+      "step": "rates"
+    },
+    {
+      "ok": true,
+      "step": "sales invoice"
+    },
+    {
+      "ok": true,
+      "step": "supplier"
+    },
+    {
+      "ok": true,
+      "step": "transfer"
+    },
+    {
+      "ok": true,
+      "step": "warehouse"
+    }
+  ],
+  "transfers": [
+    {
+      "amount": "1000",
+      "attachments": "",
+      "currency": "USD",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fromBank": null,
+      "fromFund": "VAULT",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "reference": "TR-YYMMDD-001",
+      "status": "COMPLETED",
+      "toBank": {
+        "name": "بنك تجريبي"
+      },
+      "toFund": "BANK",
+      "transactionDate": "2026-09-07T00:00:00.000Z"
+    }
+  ],
+  "trialBalance": {
+    "asOf": "2026-09-30",
+    "books": [
+      {
+        "balanced": true,
+        "currency": "SYP",
+        "rows": [
+          {
+            "code": "1110",
+            "credit": "0.00",
+            "debit": "23190000.00",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          {
+            "code": "1160",
+            "credit": "0.00",
+            "debit": "2660000.00",
+            "name": "وسيط تقييم العملات",
+            "type": "LIABILITY"
+          },
+          {
+            "code": "3100",
+            "credit": "20000000.00",
+            "debit": "0.00",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          {
+            "code": "4900",
+            "credit": "7100000.00",
+            "debit": "0.00",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          {
+            "code": "5200",
+            "credit": "0.00",
+            "debit": "1250000.00",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          }
+        ],
+        "totalCredit": "27100000.00",
+        "totalDebit": "27100000.00"
+      },
+      {
+        "balanced": true,
+        "currency": "USD",
+        "rows": [
+          {
+            "code": "1110",
+            "credit": "0.00",
+            "debit": "5250.00",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          {
+            "code": "1130",
+            "credit": "0.00",
+            "debit": "1500.00",
+            "name": "البنوك",
+            "type": "ASSET"
+          },
+          {
+            "code": "1150",
+            "credit": "198.51",
+            "debit": "0.00",
+            "name": "مركز عملات أجنبية",
+            "type": "ASSET"
+          },
+          {
+            "code": "1200",
+            "credit": "0.00",
+            "debit": "104.00",
+            "name": "ذمم الزبائن",
+            "type": "ASSET"
+          },
+          {
+            "code": "1300",
+            "credit": "0.00",
+            "debit": "80.00",
+            "name": "عهد وسلف المستلفين",
+            "type": "ASSET"
+          },
+          {
+            "code": "1400",
+            "credit": "0.00",
+            "debit": "300.00",
+            "name": "المخزون",
+            "type": "ASSET"
+          },
+          {
+            "code": "2100",
+            "credit": "200.00",
+            "debit": "0.00",
+            "name": "ذمم الموردين",
+            "type": "LIABILITY"
+          },
+          {
+            "code": "3100",
+            "credit": "5000.00",
+            "debit": "0.00",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          {
+            "code": "4100",
+            "credit": "304.00",
+            "debit": "0.00",
+            "name": "المبيعات",
+            "type": "INCOME"
+          },
+          {
+            "code": "4200",
+            "credit": "1.49",
+            "debit": "0.00",
+            "name": "أرباح التصريف",
+            "type": "INCOME"
+          },
+          {
+            "code": "4900",
+            "credit": "2000.00",
+            "debit": "0.00",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          {
+            "code": "5100",
+            "credit": "0.00",
+            "debit": "200.00",
+            "name": "تكلفة المبيعات",
+            "type": "EXPENSE"
+          },
+          {
+            "code": "5200",
+            "credit": "0.00",
+            "debit": "270.00",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          }
+        ],
+        "totalCredit": "7704.00",
+        "totalDebit": "7704.00"
+      }
+    ]
+  },
+  "trialBalanceUsd": {
+    "asOf": "2026-09-30",
+    "books": [
+      {
+        "balanced": true,
+        "currency": "USD",
+        "rows": [
+          {
+            "code": "1110",
+            "credit": "0.00",
+            "debit": "5250.00",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          {
+            "code": "1130",
+            "credit": "0.00",
+            "debit": "1500.00",
+            "name": "البنوك",
+            "type": "ASSET"
+          },
+          {
+            "code": "1150",
+            "credit": "198.51",
+            "debit": "0.00",
+            "name": "مركز عملات أجنبية",
+            "type": "ASSET"
+          },
+          {
+            "code": "1200",
+            "credit": "0.00",
+            "debit": "104.00",
+            "name": "ذمم الزبائن",
+            "type": "ASSET"
+          },
+          {
+            "code": "1300",
+            "credit": "0.00",
+            "debit": "80.00",
+            "name": "عهد وسلف المستلفين",
+            "type": "ASSET"
+          },
+          {
+            "code": "1400",
+            "credit": "0.00",
+            "debit": "300.00",
+            "name": "المخزون",
+            "type": "ASSET"
+          },
+          {
+            "code": "2100",
+            "credit": "200.00",
+            "debit": "0.00",
+            "name": "ذمم الموردين",
+            "type": "LIABILITY"
+          },
+          {
+            "code": "3100",
+            "credit": "5000.00",
+            "debit": "0.00",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          {
+            "code": "4100",
+            "credit": "304.00",
+            "debit": "0.00",
+            "name": "المبيعات",
+            "type": "INCOME"
+          },
+          {
+            "code": "4200",
+            "credit": "1.49",
+            "debit": "0.00",
+            "name": "أرباح التصريف",
+            "type": "INCOME"
+          },
+          {
+            "code": "4900",
+            "credit": "2000.00",
+            "debit": "0.00",
+            "name": "إيرادات أخرى",
+            "type": "INCOME"
+          },
+          {
+            "code": "5100",
+            "credit": "0.00",
+            "debit": "200.00",
+            "name": "تكلفة المبيعات",
+            "type": "EXPENSE"
+          },
+          {
+            "code": "5200",
+            "credit": "0.00",
+            "debit": "270.00",
+            "name": "مصروفات تشغيل",
+            "type": "EXPENSE"
+          }
+        ],
+        "totalCredit": "7704.00",
+        "totalDebit": "7704.00"
+      }
+    ]
+  }
+}
