@@ -9,16 +9,17 @@
   ],
   "scripts": {
     "dev:web": "npm run dev -w @unigate/web",
-    "dev:api": "npm run start:dev -w @unigate/api",
+    "dev:api": "npm run build:shared && npm run start:dev -w @unigate/api",
     "build:web": "npm run build -w @unigate/web",
-    "build:api": "npm run build -w @unigate/shared && npm run build -w @unigate/database && npm run build -w @unigate/api",
+    "build:api": "npm run build:shared && npm run build -w @unigate/api",
     "typecheck:web": "npm run typecheck -w @unigate/web",
     "typecheck:api": "npm run typecheck -w @unigate/api",
     "test:api": "npm run test -w @unigate/api",
     "db:generate": "npm run generate -w @unigate/database",
     "db:migrate": "npm run migrate:dev -w @unigate/database",
-    "db:seed:dev": "npm run seed:dev -w @unigate/api",
-    "postinstall": "npm run generate -w @unigate/database --if-present"
+    "db:seed:dev": "npm run build:shared && npm run seed:dev -w @unigate/api",
+    "postinstall": "npm run generate -w @unigate/database --if-present",
+    "build:shared": "npm run build -w @unigate/shared && npm run build -w @unigate/database"
   },
   "engines": {
     "node": ">=20"
