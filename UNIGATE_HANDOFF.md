@@ -389,10 +389,18 @@ Open follow-ups from the F1 review (for phase 11 or later):
 
 - `requireCompanyAdmin(auth, area)` in `auth/access.ts` checks the level and the scope. A platform operator in support passes it and is not limited by the guards below.
 - Decision L guards for members, in `roles.service.ts` (`memberGuard`), run inside the transaction after the change and before commit: changing the role you hold is `409 CONFLICT`; touching a role above you in any area, or leaving any area above your own level, is `403 FORBIDDEN`. User assignment has the same ceiling (F1).
-- Lockout: no extra check. The acting member can edit roles, cannot change their own role, and cannot deactivate themselves, so at least one active role editor always remains after any member action. A platform operator can always repair a company.
-- `MemberContext` carries `roleId`.
+- Member writes on users and roles run `auth/member-guard.ts` inside the transaction:
+  - `lockCompanyAdmins` locks the company row (`FOR NO KEY UPDATE`) first on every member user edit and role write, so two managers cannot demote each other at the same time.
+  - `lockActorCeiling` re-reads the acting member's role and holds it (`FOR SHARE`), so a request that started before a demotion cannot use the old levels.
+  - `assertWithin`: nothing a member creates, edits, assigns, resets, or deactivates may be above them. "Above" means a higher level in any area, or fewer approval flags than the member's own role.
+  - `assertKeepsRoleEditors`: a member write that would take the company from some active role editors (roles `WRITE`, `ALL_BRANCHES`) to none is `409 LAST_ROLE_EDITOR`. A company that had none is not blocked.
+  - Changing the role you hold is `409 OWN_ROLE`.
+  - Platform operators are not limited by these guards, so Unigate can always repair a company.
+- New error codes: `OWN_ROLE`, `LAST_ROLE_EDITOR`.
+- `MemberContext` carries `roleId`, and `/api/auth/me` returns `roleId` for members.
+- The independent review found a takeover path (a manager-made users-only role could reset or deactivate the general manager), two lockout paths (including a race), and approval flags not being capped. All four are fixed, with tests, and the reviewer's own probe now gets 403 or 409 in every case.
 - Web: `/app/branches` and `/app/roles` create and edit through the new routes. The permission matrix offers a member only the levels they hold. Their own role and roles above them open read-only with a note.
-- Tests: `roles/company-admin.spec.ts` (7 tests). `npm run test:api`: 14 suites, 76 tests passed.
+- Tests: `roles/company-admin.spec.ts` (10 tests). `npm run test:api`: 14 suites, 79 tests passed. `tsc --noEmit`, `nest build`, and `next build` pass.
 
 ## Working method
 

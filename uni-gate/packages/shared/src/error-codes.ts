@@ -13,6 +13,10 @@ export const ErrorCode = {
   KEY_TAKEN: 'KEY_TAKEN',
   NAME_TAKEN: 'NAME_TAKEN',
   LOCATION_REQUIRED: 'LOCATION_REQUIRED',
+  /** A member tried to change the role they hold (decision L). */
+  OWN_ROLE: 'OWN_ROLE',
+  /** The change would leave the company without an active user who can edit roles. */
+  LAST_ROLE_EDITOR: 'LAST_ROLE_EDITOR',
   DATE_PAST: 'DATE_PAST',
   INTERNAL: 'INTERNAL',
 } as const;

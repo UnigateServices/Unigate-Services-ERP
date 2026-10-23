@@ -25,6 +25,7 @@ type MeResponse =
       userId: string;
       name: string;
       company: { id: string; name: string; code: string };
+      roleId: string;
       roleKey: string;
       roleName: string;
       locationId: string | null;
@@ -82,6 +83,7 @@ function toSession(me: MeResponse): AppSession {
       name: me.name,
       companyId: me.actingCompany?.id ?? null,
       companyName: me.actingCompany?.name ?? null,
+      roleId: null,
       roleKey: null,
       roleName: null,
       locationId: null,
@@ -98,6 +100,7 @@ function toSession(me: MeResponse): AppSession {
     name: me.name,
     companyId: me.company.id,
     companyName: me.company.name,
+    roleId: me.roleId,
     roleKey: me.roleKey,
     roleName: me.roleName,
     locationId: me.locationId,

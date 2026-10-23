@@ -132,7 +132,7 @@ describe('company administration by managers (phase 11)', () => {
 
     const own = await role(alpha.id, 'GENERAL_MANAGER');
     const self = await send('patch', `/api/roles/${own.id}`, chief, roleBody('GENERAL_MANAGER', [{ area: 'finance', level: 'READ' }], 'ALL_BRANCHES')).expect(409);
-    expect(self.body.code).toBe('CONFLICT');
+    expect(self.body.code).toBe('OWN_ROLE');
     expect((await prisma.rolePermission.findFirstOrThrow({ where: { roleId: own.id, area: 'finance' } })).level).toBe('ADMIN');
     expect(await prisma.auditEntry.count({ where: { targetType: 'role', targetId: own.id } })).toBe(0);
   });
@@ -160,6 +160,79 @@ describe('company administration by managers (phase 11)', () => {
     const widened = await send('patch', `/api/roles/${employee.id}`, chief, roleBody('EMPLOYEE', [], 'ALL_BRANCHES')).expect(409);
     expect(widened.body.code).toBe('CONFLICT');
     expect((await role(alpha.id, 'EMPLOYEE')).visibilityScope).toBe('OWN');
+  });
+
+  it('does not let a user manager act on a user whose role is above theirs (review finding 1)', async () => {
+    const { alpha, chief } = await setup();
+    const chiefUser = await prisma.membership.findFirstOrThrow({ where: { username: 'chief' } });
+    const hrRole = await send('post', '/api/roles', chief, roleBody('HR', [{ area: 'users', level: 'WRITE' }], 'ALL_BRANCHES')).expect(201);
+    const hr = await loginMember('alpha', await memberWithRole(alpha.id, 'hr', hrRole.body.id, null));
+
+    const reset = await send('post', `/api/users/${chiefUser.userId}/password`, hr, { password: 'Taken123' }).expect(403);
+    expect(reset.body.code).toBe('FORBIDDEN');
+    const chiefNow = await request(app.getHttpServer()).get(`/api/users/${chiefUser.userId}`).set('Cookie', hr).expect(200);
+    const patch = {
+      name: chiefNow.body.name,
+      username: chiefNow.body.username,
+      email: null,
+      phone: null,
+      status: 'INACTIVE',
+      roleId: chiefNow.body.role.id,
+      locationId: null,
+    };
+    await send('patch', `/api/users/${chiefUser.userId}`, hr, patch).expect(403);
+    const monitor = await role(alpha.id, 'MONITOR');
+    await send('patch', `/api/users/${chiefUser.userId}`, hr, { ...patch, status: 'ACTIVE', roleId: monitor.id }).expect(403);
+    const after = await prisma.membership.findFirstOrThrow({ where: { username: 'chief' }, include: { user: true } });
+    expect(after.user.status).toBe('ACTIVE');
+    expect(after.roleId).toBe(chiefNow.body.role.id);
+  });
+
+  it('never leaves the company without a role editor, even when two managers race (review findings 2 and 3)', async () => {
+    const { alpha, chief } = await setup();
+    const gm = await role(alpha.id, 'GENERAL_MANAGER');
+    const monitor = await role(alpha.id, 'MONITOR');
+    const boss2 = await loginMember('alpha', await member(alpha.id, 'boss2', 'GENERAL_MANAGER', null));
+    const chiefUser = await prisma.membership.findFirstOrThrow({ where: { username: 'chief' }, include: { user: true } });
+    const boss2User = await prisma.membership.findFirstOrThrow({ where: { username: 'boss2' }, include: { user: true } });
+    const demote = (who: string, target: typeof chiefUser) =>
+      send('patch', `/api/users/${target.userId}`, who, {
+        name: target.user.name,
+        username: target.username,
+        email: null,
+        phone: null,
+        status: 'ACTIVE',
+        roleId: monitor.id,
+        locationId: null,
+      });
+    const [first, second] = await Promise.all([demote(chief, boss2User), demote(boss2, chiefUser)]);
+    expect([first.status, second.status].sort()).toEqual([200, 403]);
+    const editors = await prisma.membership.count({
+      where: { companyId: alpha.id, user: { status: 'ACTIVE' }, role: { visibilityScope: 'ALL_BRANCHES', permissions: { some: { area: 'roles', level: 'WRITE' } } } },
+    });
+    expect(editors).toBe(1);
+    expect(gm.id).toBeTruthy();
+  });
+
+  it('caps approval settings at the manager own (review finding 4)', async () => {
+    const { cookie, alpha } = await setup();
+    const ctrl = await send(
+      'post',
+      `/api/platform/companies/${alpha.id}/roles`,
+      cookie,
+      {
+        ...roleBody('CTRL', [{ area: 'roles', level: 'WRITE' }, { area: 'users', level: 'WRITE' }, { area: 'branches', level: 'WRITE' }, { area: 'finance', level: 'WRITE' }], 'ALL_BRANCHES'),
+        editRequiresApproval: true,
+        deleteRequiresApproval: true,
+      },
+    ).expect(201);
+    const ctrlCookie = await loginMember('alpha', await memberWithRole(alpha.id, 'ctrl', ctrl.body.id, null));
+    const free = await send('post', '/api/roles', ctrlCookie, roleBody('FREE', [{ area: 'finance', level: 'WRITE' }])).expect(403);
+    expect(free.body.code).toBe('FORBIDDEN');
+    await send('post', '/api/roles', ctrlCookie, { ...roleBody('BOUND', [{ area: 'finance', level: 'WRITE' }]), editRequiresApproval: true, deleteRequiresApproval: true }).expect(201);
+    // The manager role (no approvals needed) is looser than ctrl, so ctrl cannot assign it.
+    const gm = await role(alpha.id, 'GENERAL_MANAGER');
+    await send('post', '/api/users', ctrlCookie, { name: 'X', username: 'x', password: 'Secret123', email: null, phone: null, roleId: gm.id, locationId: null }).expect(403);
   });
 
   it('lets a platform operator in support use the same company routes', async () => {

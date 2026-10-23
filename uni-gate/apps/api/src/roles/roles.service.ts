@@ -1,7 +1,17 @@
 import { ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, PermissionLevel as DbPermissionLevel, Prisma, VisibilityScope } from '@prisma/client';
 import { ErrorCode, atLeast, type PermissionArea, type PermissionLevel, type PermissionMap } from '@unigate/shared';
-import { accessFor, requireCompanyAdmin, toPermissionMap, withinLevels } from '../auth/access';
+import { accessFor, requireCompanyAdmin, toPermissionMap } from '../auth/access';
+import {
+  assertKeepsRoleEditors,
+  assertWithin,
+  countRoleEditors,
+  lockActorCeiling,
+  lockCompanyAdmins,
+  roleShape,
+  type ActorCeiling,
+  type RoleShape,
+} from '../auth/member-guard';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -43,11 +53,13 @@ type RoleInput = {
   permissions?: PermissionInput[];
 };
 
-/**
- * Runs inside the write transaction, after the change and before commit. Throwing rolls it back.
- * `before` is null for a new role.
- */
-type RoleGuard = (before: PermissionMap | null, after: PermissionMap, roleId: string) => void;
+/** Member checks (decision L) around a role write. Throwing rolls the transaction back. */
+type RoleGuard = {
+  /** First statement in the transaction, before the role row is locked. */
+  begin(tx: Prisma.TransactionClient, companyId: string): Promise<void>;
+  /** After the change, before commit. `before` is null for a new role. */
+  check(tx: Prisma.TransactionClient, companyId: string, before: RoleShape | null, after: RoleShape, roleId: string): Promise<void>;
+};
 
 const roleSelect = {
   id: true,
@@ -89,12 +101,13 @@ export class RolesService {
     const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await guard?.begin(tx, companyId);
         await this.requireCompany(companyId, tx);
         await this.assertKeyAvailable(tx, companyId, fields.key);
         const created = await tx.role.create({ data: { companyId, ...fields }, select: { id: true } });
         if (permissions?.length) await applyPermissions(tx, companyId, created.id, permissions);
         const role = await this.loadRole(tx, companyId, created.id);
-        guard?.(null, toPermissionMap(role.permissions), role.id);
+        await guard?.check(tx, companyId, null, roleShape(role), role.id);
         await this.audit(tx, actorUserId, companyId, created.id, AuditAction.CREATE);
         return toPlatformRole(role);
       });
@@ -113,14 +126,21 @@ export class RolesService {
     const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await guard?.begin(tx, companyId);
         // Waits for in-flight user assignments to this role, so the scope check below sees them.
         await tx.$queryRaw`SELECT id FROM roles WHERE id = ${roleId} AND company_id = ${companyId} FOR UPDATE`;
         const existing = await tx.role.findFirst({
           where: { id: roleId, companyId },
-          select: { id: true, visibilityScope: true },
+          select: {
+            id: true,
+            visibilityScope: true,
+            editRequiresApproval: true,
+            deleteRequiresApproval: true,
+            permissions: { select: { area: true, level: true } },
+          },
         });
         if (!existing) throw this.roleNotFound();
-        const before = toPermissionMap(await tx.rolePermission.findMany({ where: { companyId, roleId } }));
+        const before = roleShape(existing);
         if (existing.visibilityScope !== fields.visibilityScope) {
           await this.assertScopeCompatible(tx, roleId, fields.visibilityScope);
         }
@@ -131,7 +151,7 @@ export class RolesService {
         });
         if (permissions?.length) await applyPermissions(tx, companyId, roleId, permissions);
         const role = await this.loadRole(tx, companyId, roleId);
-        guard?.(before, toPermissionMap(role.permissions), roleId);
+        await guard?.check(tx, companyId, before, roleShape(role), roleId);
         await this.audit(tx, actorUserId, companyId, roleId, AuditAction.UPDATE);
         return toPlatformRole(role);
       });
@@ -251,22 +271,34 @@ export class RolesService {
 
 /**
  * Decision L for members. A platform operator is not limited here.
- * - Nobody changes the role they hold, so a company can never lock its own administrators out.
- * - Nobody touches a role that is above them in any area, or raises one above themselves.
+ * - Locks the company and re-reads the member's role (see auth/member-guard.ts).
+ * - Nobody changes the role they hold.
+ * - Nobody touches a role above them in any area or with fewer approvals, or makes one so.
+ * - A member write never leaves the company without an active role editor.
  */
 function memberGuard(auth: RequestAuth): RoleGuard | undefined {
-  const membership = auth.actor === 'member' ? auth.membership : null;
-  if (!membership) return undefined;
-  return (before, after, roleId) => {
-    if (roleId === membership.roleId) {
-      throw new ConflictException({ code: ErrorCode.CONFLICT, message: 'You cannot change your own role.' });
-    }
-    if ((before && !withinLevels(membership.permissions, before)) || !withinLevels(membership.permissions, after)) {
-      throw new ForbiddenException({
-        code: ErrorCode.FORBIDDEN,
-        message: 'A role cannot have more permissions than yours.',
-      });
-    }
+  if (auth.actor !== 'member') return undefined;
+  let actor: ActorCeiling | null = null;
+  let editorsBefore = 0;
+  return {
+    async begin(tx, companyId) {
+      await lockCompanyAdmins(tx, companyId);
+      actor = await lockActorCeiling(tx, auth);
+      if (!actor || actor.permissions.roles !== 'WRITE' || actor.visibility !== VisibilityScope.ALL_BRANCHES) {
+        throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'You do not have permission for this action.' });
+      }
+      editorsBefore = await countRoleEditors(tx, companyId);
+    },
+    async check(tx, companyId, before, after, roleId) {
+      if (!actor) throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'You do not have permission for this action.' });
+      if (roleId === actor.roleId) {
+        throw new ConflictException({ code: ErrorCode.OWN_ROLE, message: 'You cannot change your own role.' });
+      }
+      const message = 'A role cannot have more permissions than yours.';
+      if (before) assertWithin(actor, before, message);
+      assertWithin(actor, after, message);
+      assertKeepsRoleEditors(editorsBefore, await countRoleEditors(tx, companyId));
+    },
   };
 }
 

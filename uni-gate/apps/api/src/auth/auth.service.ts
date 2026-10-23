@@ -222,6 +222,7 @@ export class AuthService {
         name: membership.companyName,
         code: membership.companyCode,
       },
+      roleId: membership.roleId,
       roleKey: membership.roleKey,
       roleName: membership.roleName,
       locationId: membership.locationId,

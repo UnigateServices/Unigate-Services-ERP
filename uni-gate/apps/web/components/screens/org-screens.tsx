@@ -585,8 +585,12 @@ export function UsersScreen({ companyId, chrome }: { companyId: string; chrome: 
   );
 }
 
-function userError(code: string, messages: { nameTaken: string; locationRequired: string; selfAdmin: string; assignmentInvalid: string; passwordRules: string; forbidden: string; network: string }) {
+function userError(
+  code: string,
+  messages: { nameTaken: string; locationRequired: string; selfAdmin: string; assignmentInvalid: string; passwordRules: string; forbidden: string; network: string; lastRoleEditor: string },
+) {
   if (code === 'NAME_TAKEN') return messages.nameTaken;
+  if (code === 'LAST_ROLE_EDITOR') return messages.lastRoleEditor;
   if (code === 'LOCATION_REQUIRED') return messages.locationRequired;
   if (code === 'CONFLICT') return messages.selfAdmin;
   if (code === 'VALIDATION_ERROR') return messages.assignmentInvalid;
@@ -933,7 +937,7 @@ export function RolesScreen({ companyId, chrome }: { companyId: string; chrome: 
                   <td>{role.visibilityScope === 'ALL_BRANCHES' ? messages.scopeAll : role.visibilityScope === 'BRANCH' ? messages.scopeBranch : messages.scopeOwn}</td>
                   <td>{role.canManageUsers ? messages.confirm : messages.none}</td>
                   <td>
-                    <Link href={`${base}/${role.id}`}>{canEditRoles(session) ? messages.edit : messages.open}</Link>
+                    <Link href={`${base}/${role.id}`}>{canEditRole(session, role) ? messages.edit : messages.open}</Link>
                   </td>
                 </tr>
               ))}
@@ -1018,7 +1022,7 @@ export function RoleFormScreen({
 
   if (!session || !ready) return <p role="status">{messages.checking}</p>;
   // A member never edits the role they hold, or a role above them in any area (decision L).
-  const ownRole = session.actor === 'member' && existing !== null && existing.key === session.roleKey;
+  const ownRole = session.actor === 'member' && existing !== null && existing.id === session.roleId;
   const ceiling = session.actor === 'member' ? session.permissions : null;
   const aboveYou =
     ceiling !== null && existing !== null && (Object.keys(existing.permissions) as PermissionArea[]).some((area) => !atLeast(ceiling[area], existing.permissions[area]));
@@ -1054,6 +1058,8 @@ export function RoleFormScreen({
     if (!result.ok) {
       if (result.code === 'KEY_TAKEN') setError(messages.keyTaken);
       else if (result.code === 'CONFLICT') setError(messages.scopeConflict);
+      else if (result.code === 'OWN_ROLE') setError(messages.ownRoleReadOnly);
+      else if (result.code === 'LAST_ROLE_EDITOR') setError(messages.lastRoleEditor);
       else if (result.code === 'FORBIDDEN') setError(messages.roleAboveYou);
       else if (result.code === 'VALIDATION_ERROR') setError(messages.roleKeyInvalid);
       else setError(messages.network);
@@ -1113,6 +1119,15 @@ export function RoleFormScreen({
       ) : null}
     </OrgFrame>
   );
+}
+
+/** Mirrors the server: not the role you hold, and nothing above you (levels and approvals). */
+function canEditRole(session: AppSession, role: CompanyRole) {
+  if (!canEditRoles(session)) return false;
+  if (session.actor !== 'member' || !session.permissions) return true;
+  const ceiling = session.permissions;
+  if (role.id === session.roleId) return false;
+  return (Object.keys(role.permissions) as PermissionArea[]).every((area) => atLeast(ceiling[area], role.permissions[area]));
 }
 
 function emptyPermissions(): PermissionMap {
