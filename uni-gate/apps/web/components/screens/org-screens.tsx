@@ -9,8 +9,17 @@ import { PasswordField } from '@/components/password-field';
 import { PrimaryButton } from '@/components/primary-button';
 import { AppShell, ConfirmDialog, EmptyState, PageHeader, Pagination, PlatformShell, StatusBadge } from '@/components/shell';
 import { moduleLabel } from '@/lib/messages';
+import {
+  ADMIN_AREAS,
+  MODULE_AREAS,
+  PERMISSION_LEVELS,
+  allowedLevels,
+  type PermissionArea,
+  type PermissionLevel,
+  type PermissionMap,
+} from '@/lib/permission-areas';
 import { pageOf } from '@/lib/page';
-import { canCreateBranch, canEditRoles, canManageUsers, canSeeRoles, seesAllBranches } from '@/lib/permissions';
+import { canCreateBranch, canEditRoles, canManageUsers, canSeeBranches, canSeeRoles, canSeeUsers, seesAllBranches } from '@/lib/permissions';
 import { usePreferences } from '@/lib/preferences';
 import { changeOwnPassword, loadSession } from '@/lib/session';
 import { useGate } from '@/lib/use-gate';
@@ -54,8 +63,8 @@ function moduleLinks(enabled: ModuleKey[], messages: ReturnType<typeof usePrefer
 
 function appNav(session: AppSession, enabled: ModuleKey[], messages: ReturnType<typeof usePreferences>['messages']) {
   const items = [{ href: '/app', label: messages.welcome }];
-  items.push({ href: '/app/branches', label: messages.navBranches });
-  if (canManageUsers(session)) items.push({ href: '/app/users', label: messages.navUsers });
+  if (canSeeBranches(session)) items.push({ href: '/app/branches', label: messages.navBranches });
+  if (canSeeUsers(session)) items.push({ href: '/app/users', label: messages.navUsers });
   if (canSeeRoles(session)) items.push({ href: '/app/roles', label: messages.navRoles });
   items.push(...moduleLinks(enabled, messages));
   return items;
@@ -131,7 +140,9 @@ export function BranchesScreen({ companyId, chrome }: { companyId: string; chrom
       const listed = await listCustomerLocations();
       if (cancelled) return;
       if (!listed.ok) {
-        setLoadError(listed.code === 'CONFLICT' ? messages.pendingAreas : messages.network);
+        setLoadError(
+          listed.code === 'CONFLICT' ? messages.pendingAreas : listed.code === 'FORBIDDEN' ? messages.forbidden : messages.network,
+        );
         setReady(true);
         return;
       }
@@ -142,10 +153,11 @@ export function BranchesScreen({ companyId, chrome }: { companyId: string; chrom
     return () => {
       cancelled = true;
     };
-  }, [chrome, companyId, messages.network, messages.pendingAreas]);
+  }, [chrome, companyId, messages.forbidden, messages.network, messages.pendingAreas]);
 
   if (!session || !ready) return <p role="status">{messages.checking}</p>;
   if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
+  if (!canSeeBranches(session)) return <p>{messages.forbidden}</p>;
   const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
   const filtered = rows.filter((item) => item.name.toLocaleLowerCase().includes(q.trim().toLocaleLowerCase()));
   const view = pageOf(filtered, page);
@@ -486,24 +498,28 @@ export function UsersScreen({ companyId, chrome }: { companyId: string; chrome: 
   }, [chrome, companyId, messages.network, page, q]);
 
   if (!session || !ready) return <p role="status">{messages.checking}</p>;
-  if (!canManageUsers(session) || denied) return <p>{messages.forbidden}</p>;
+  if (!canSeeUsers(session) || denied) return <p>{messages.forbidden}</p>;
   if (missing) return <p>{messages.notFound}</p>;
   if (chrome === 'app' && session.companyId !== companyId) return <p>{messages.forbidden}</p>;
   const displayName = chrome === 'app' ? (session.companyName ?? '') : companyName;
   const base = chrome === 'platform' ? `/platform/companies/${companyId}/users` : '/app/users';
   const pages = Math.max(1, Math.ceil(total / 20));
+  const writable = canManageUsers(session);
   return (
     <OrgFrame chrome={chrome} session={session} companyId={companyId}>
       <PageHeader
         title={messages.usersTitle}
         crumbs={crumbs(chrome, displayName, messages.usersTitle, messages)}
         actions={
-          <Link className="primary-button link-button" href={`${base}/new`}>
-            {messages.newUser}
-          </Link>
+          writable ? (
+            <Link className="primary-button link-button" href={`${base}/new`}>
+              {messages.newUser}
+            </Link>
+          ) : null
         }
       />
       {loadError ? <InlineAlert message={loadError} /> : null}
+      {!writable ? <InlineAlert tone="info" message={messages.usersReadOnly} /> : null}
       {!loadError ? (
         <div className="filters">
           <label>
@@ -529,7 +545,7 @@ export function UsersScreen({ companyId, chrome }: { companyId: string; chrome: 
                 <th>{messages.role}</th>
                 <th>{messages.branch}</th>
                 <th>{messages.status}</th>
-                <th>{messages.edit}</th>
+                {writable ? <th>{messages.edit}</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -542,9 +558,11 @@ export function UsersScreen({ companyId, chrome }: { companyId: string; chrome: 
                   <td>
                     <StatusBadge status={user.status} />
                   </td>
-                  <td>
-                    <Link href={`${base}/${user.id}`}>{messages.edit}</Link>
-                  </td>
+                  {writable ? (
+                    <td>
+                      <Link href={`${base}/${user.id}`}>{messages.edit}</Link>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -931,7 +949,7 @@ export function RoleFormScreen({
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [scope, setScope] = useState<VisibilityScope>('BRANCH');
-  const [manage, setManage] = useState(false);
+  const [permissions, setPermissions] = useState<PermissionMap>(() => ({ ...emptyPermissions(), branches: 'READ' }));
   const [editApproval, setEditApproval] = useState(false);
   const [deleteApproval, setDeleteApproval] = useState(false);
   const [existing, setExisting] = useState<CompanyRole | null>(null);
@@ -975,7 +993,7 @@ export function RoleFormScreen({
         setName(found.name);
         setKey(found.key);
         setScope(found.visibilityScope);
-        setManage(found.canManageUsers);
+        setPermissions({ ...emptyPermissions(), ...found.permissions });
         setEditApproval(found.editRequiresApproval);
         setDeleteApproval(found.deleteRequiresApproval);
       }
@@ -1005,9 +1023,9 @@ export function RoleFormScreen({
       name: name.trim(),
       key: normalized,
       visibilityScope: scope,
-      canManageUsers: manage,
       editRequiresApproval: editApproval,
       deleteRequiresApproval: deleteApproval,
+      permissions: (Object.keys(permissions) as PermissionArea[]).map((area) => ({ area, level: permissions[area] })),
     };
     const result = existing
       ? await updatePlatformRole(companyId, existing.id, input)
@@ -1051,10 +1069,6 @@ export function RoleFormScreen({
                 </label>
               ))}
               <label className="choice">
-                <input type="checkbox" checked={manage} onChange={(event) => setManage(event.target.checked)} />
-                <span>{messages.manageUsersFlag}</span>
-              </label>
-              <label className="choice">
                 <input type="checkbox" checked={editApproval} onChange={(event) => setEditApproval(event.target.checked)} />
                 <span>{messages.editApproval}</span>
               </label>
@@ -1064,11 +1078,86 @@ export function RoleFormScreen({
               </label>
               <p className="field-hint">{messages.approvalHint}</p>
             </fieldset>
+            <PermissionMatrix
+              value={permissions}
+              disabled={!writable || saving}
+              onChange={(area, level) => setPermissions((current) => ({ ...current, [area]: level }))}
+            />
             {writable ? <PrimaryButton disabled={saving}>{saving ? messages.saving : messages.save}</PrimaryButton> : null}
           </form>
         </>
       ) : null}
     </OrgFrame>
+  );
+}
+
+function emptyPermissions(): PermissionMap {
+  const map = {} as PermissionMap;
+  for (const area of [...ADMIN_AREAS, ...MODULE_AREAS]) map[area] = 'NONE';
+  return map;
+}
+
+function PermissionMatrix({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: PermissionMap;
+  disabled: boolean;
+  onChange: (area: PermissionArea, level: PermissionLevel) => void;
+}) {
+  const { messages } = usePreferences();
+  const levelLabel = (level: PermissionLevel) => messages[`level${level}` as const];
+  const areaLabel = (area: PermissionArea) =>
+    area === 'users'
+      ? messages.areaUsers
+      : area === 'branches'
+        ? messages.areaBranches
+        : area === 'roles'
+          ? messages.areaRoles
+          : moduleLabel(area, messages);
+  const groups: { title: string; areas: readonly PermissionArea[] }[] = [
+    { title: messages.permissionsAdminGroup, areas: ADMIN_AREAS },
+    { title: messages.permissionsModuleGroup, areas: MODULE_AREAS },
+  ];
+  return (
+    <fieldset disabled={disabled}>
+      <legend>{messages.permissionsTitle}</legend>
+      <p className="field-hint">{messages.permissionsHint}</p>
+      <div className="table-wrap">
+        <table className="permission-table">
+          {groups.map((group) => (
+            <tbody key={group.title}>
+              <tr>
+                <th scope="rowgroup" colSpan={2}>
+                  {group.title}
+                </th>
+              </tr>
+              {group.areas.map((area) => (
+                <tr key={area}>
+                  <td>
+                    <label htmlFor={`perm-${area}`}>{areaLabel(area)}</label>
+                  </td>
+                  <td>
+                    <select
+                      id={`perm-${area}`}
+                      value={value[area]}
+                      onChange={(event) => onChange(area, event.target.value as PermissionLevel)}
+                    >
+                      {PERMISSION_LEVELS.filter((level) => allowedLevels(area).includes(level)).map((level) => (
+                        <option key={level} value={level}>
+                          {levelLabel(level)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </fieldset>
   );
 }
 
@@ -1081,7 +1170,7 @@ export function CustomerDashboard() {
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    if (!session?.companyId) return;
+    if (!session?.companyId || !canSeeBranches(session)) return;
     let cancelled = false;
     void listCustomerLocations().then((result) => {
       if (cancelled) return;
@@ -1096,10 +1185,10 @@ export function CustomerDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [messages.network, messages.pendingAreas, session?.companyId]);
+  }, [messages.network, messages.pendingAreas, session?.actor, session?.companyId, session?.permissions?.branches]);
 
   useEffect(() => {
-    if (!session?.companyId || !session.canManageUsers) return;
+    if (!session?.companyId || !canSeeUsers(session)) return;
     let cancelled = false;
     void listCustomerUsers({ page: 1 }).then((result) => {
       if (cancelled || !result.ok) return;
@@ -1108,7 +1197,7 @@ export function CustomerDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [session?.canManageUsers, session?.companyId]);
+  }, [session?.actor, session?.companyId, session?.permissions?.users]);
 
   if (!session) return <p role="status">{messages.checking}</p>;
   if (!session.companyId) return <p className="field-hint">{messages.pendingAreas}</p>;
@@ -1129,11 +1218,13 @@ export function CustomerDashboard() {
       </p>
       {loadError ? <InlineAlert message={loadError} /> : null}
       <div className="stat-row">
-        <Link className="stat-link" href="/app/branches">
-          <strong>{branchCount === null ? '…' : branchCount}</strong>
-          <span>{messages.countsBranches}</span>
-        </Link>
-        {session.canManageUsers ? (
+        {canSeeBranches(session) ? (
+          <Link className="stat-link" href="/app/branches">
+            <strong>{branchCount === null ? '…' : branchCount}</strong>
+            <span>{messages.countsBranches}</span>
+          </Link>
+        ) : null}
+        {canSeeUsers(session) ? (
           <Link className="stat-link" href="/app/users">
             <strong>{userCount === null ? '…' : userCount}</strong>
             <span>{messages.countsUsers}</span>

@@ -35,6 +35,18 @@
 //   key when locationId is null.
 // - A referenced location is not set null on delete. Branches are deactivated.
 //   ON DELETE SET NULL on the composite key would also clear companyId.
+// - Membership also has a unique (companyId, id), so later tables (finance) can name
+//   the acting member together with the company in one foreign key.
+// - A trigger keeps role scope and membership location in agreement:
+//   ALL_BRANCHES has no location, BRANCH and OWN have one. See migration
+//   20261023090000_role_permissions.
+//
+// Permissions
+// - RolePermission holds one level per role and area. A missing row is NONE.
+//   Areas are listed in PERMISSION_AREAS in @unigate/shared, not in a database enum,
+//   so a new module adds no column or enum value here.
+// - Administration areas (users, branches, roles) accept READ or WRITE only.
+//   CHECK constraints enforce that, and that NONE is never stored.
 
 generator client {
   provider = "prisma-client-js"
@@ -78,6 +90,15 @@ enum ModuleKey {
   aviation
   engineering
   hr
+}
+
+/// NONE < READ < WRITE < APPROVE < ADMIN. Each level includes the ones before it.
+enum PermissionLevel {
+  NONE
+  READ
+  WRITE
+  APPROVE
+  ADMIN
 }
 
 enum AuditAction {
@@ -132,6 +153,7 @@ model Company {
   memberships Membership[]
   modules     CompanyModule[]
   auditEntries AuditEntry[]
+  rolePermissions RolePermission[]
 
   @@map("companies")
 }
@@ -158,15 +180,15 @@ model Role {
   companyId              String          @map("company_id")
   key                    String
   name                   String
-  canManageUsers         Boolean         @default(false) @map("can_manage_users")
   visibilityScope        VisibilityScope @map("visibility_scope")
   editRequiresApproval   Boolean         @default(false) @map("edit_requires_approval")
   deleteRequiresApproval Boolean         @default(false) @map("delete_requires_approval")
   createdAt              DateTime        @default(now()) @map("created_at")
   updatedAt              DateTime        @updatedAt @map("updated_at")
 
-  company     Company      @relation(fields: [companyId], references: [id])
+  company     Company          @relation(fields: [companyId], references: [id])
   memberships Membership[]
+  permissions RolePermission[]
 
   @@unique([companyId, key])
   @@unique([companyId, id])
@@ -191,10 +213,30 @@ model Membership {
   location Location? @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
 
   @@unique([companyId, username])
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([roleId])
   @@index([locationId])
   @@map("memberships")
+}
+
+model RolePermission {
+  id        String          @id @default(cuid())
+  companyId String          @map("company_id")
+  roleId    String          @map("role_id")
+  /// Key from PERMISSION_AREAS in @unigate/shared.
+  area      String
+  /// Never NONE in a stored row. A missing row is NONE.
+  level     PermissionLevel
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+  role    Role    @relation(fields: [companyId, roleId], references: [companyId, id], onDelete: Cascade)
+
+  @@unique([companyId, roleId, area])
+  @@index([roleId])
+  @@map("role_permissions")
 }
 
 model CompanyModule {

@@ -11,7 +11,7 @@ import path from 'path';
 import { CompanyStatus, PrismaClient, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
 import { MODULE_KEYS, passwordIssue, todayInDamascus } from '@unigate/shared';
 import * as bcrypt from 'bcrypt';
-import { ROLE_PRESETS } from '../src/platform/companies/role-presets';
+import { ROLE_PRESETS, presetPermissionRows } from '../src/platform/companies/role-presets';
 
 const root = path.resolve(__dirname, '../../..');
 loadEnv(path.join(root, '.env'));
@@ -200,13 +200,11 @@ async function ensureCustomer(input: {
       companyId: input.companyId,
       key: input.roleKey,
       name: input.roleName,
-      canManageUsers: true,
       visibilityScope: VisibilityScope.ALL_BRANCHES,
     },
     update: {
       key: input.roleKey,
       name: input.roleName,
-      canManageUsers: true,
       visibilityScope: VisibilityScope.ALL_BRANCHES,
     },
   });
@@ -260,23 +258,26 @@ async function ensureCompanyModules(companyId: string) {
   }
 }
 
+/** Resets each preset role, and its permissions, to the preset. Other roles are not touched. */
 async function ensurePresetRoles(companyId: string, preset: 'tradivia' | 'simple') {
-  for (const role of ROLE_PRESETS[preset]) {
-    const existing = await prisma.role.findFirst({ where: { companyId, key: role.key } });
-    if (existing) {
-      await prisma.role.update({
-        where: { id: existing.id },
-        data: {
-          name: role.name,
-          canManageUsers: role.canManageUsers,
-          visibilityScope: role.visibilityScope,
-          editRequiresApproval: role.editRequiresApproval,
-          deleteRequiresApproval: role.deleteRequiresApproval,
-        },
-      });
-      continue;
-    }
-    await prisma.role.create({ data: { companyId, ...role } });
+  for (const template of ROLE_PRESETS[preset]) {
+    const { permissions: _permissions, ...fields } = template;
+    const existing = await prisma.role.findFirst({ where: { companyId, key: template.key } });
+    const role = existing
+      ? await prisma.role.update({
+          where: { id: existing.id },
+          data: {
+            name: fields.name,
+            visibilityScope: fields.visibilityScope,
+            editRequiresApproval: fields.editRequiresApproval,
+            deleteRequiresApproval: fields.deleteRequiresApproval,
+          },
+        })
+      : await prisma.role.create({ data: { companyId, ...fields } });
+    await prisma.$transaction([
+      prisma.rolePermission.deleteMany({ where: { companyId, roleId: role.id } }),
+      prisma.rolePermission.createMany({ data: presetPermissionRows(companyId, role.id, template) }),
+    ]);
   }
 }
 

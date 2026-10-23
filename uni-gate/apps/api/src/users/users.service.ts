@@ -7,10 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditAction, Prisma, RecordStatus, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
-import { ErrorCode, passwordIssue } from '@unigate/shared';
+import { ErrorCode, atLeast, passwordIssue } from '@unigate/shared';
+import { requireAccess, toPermissionMap } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PasswordService } from '../auth/password.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isScopeMismatch } from '../roles/roles.service';
 
 export type CustomerUserDto = {
   id: string;
@@ -50,9 +52,12 @@ type Scope = {
 
 const membershipInclude = {
   user: true,
-  role: true,
+  role: { include: { permissions: { select: { area: true, level: true } } } },
   location: true,
 } as const;
+
+/** Levels that let a role manage users. A branch-scoped manager cannot reach or grant these roles. */
+const MANAGING_LEVELS = ['WRITE', 'APPROVE', 'ADMIN'] as const;
 
 type MembershipRow = Prisma.MembershipGetPayload<{ include: typeof membershipInclude }>;
 
@@ -100,25 +105,25 @@ export class UsersService {
   }
 
   listForSession(auth: RequestAuth, raw: { page?: string; pageSize?: string; q?: string }) {
-    return this.list(this.scopeFromSession(auth), parseListQuery(raw));
+    return this.list(this.scopeFromSession(auth, 'READ'), parseListQuery(raw));
   }
 
   getForSession(auth: RequestAuth, userId: string) {
-    return this.getOne(this.scopeFromSession(auth), userId);
+    return this.getOne(this.scopeFromSession(auth, 'READ'), userId);
   }
 
   createForSession(auth: RequestAuth, input: ProfileInput & { password: string }) {
-    const scope = this.scopeFromSession(auth);
+    const scope = this.scopeFromSession(auth, 'WRITE');
     return this.create(scope, input, auth.userId);
   }
 
   updateForSession(auth: RequestAuth, userId: string, input: UpdateInput) {
-    const scope = this.scopeFromSession(auth);
+    const scope = this.scopeFromSession(auth, 'WRITE');
     return this.update(scope, userId, input, auth.userId);
   }
 
   resetForSession(auth: RequestAuth, userId: string, password: string) {
-    const scope = this.scopeFromSession(auth);
+    const scope = this.scopeFromSession(auth, 'WRITE');
     return this.reset(scope, userId, password, auth.userId);
   }
 
@@ -254,33 +259,13 @@ export class UsersService {
     });
   }
 
-  private scopeFromSession(auth: RequestAuth): Scope {
-    if (auth.actor === 'platform') {
-      if (!auth.actingCompanyId) {
-        throw new ConflictException({
-          code: ErrorCode.CONFLICT,
-          message: 'A support company is required.',
-        });
-      }
-      return { companyId: auth.actingCompanyId, locationId: undefined, auth };
+  /** READ lists and opens users. WRITE creates, edits, and resets passwords. */
+  private scopeFromSession(auth: RequestAuth, minimum: 'READ' | 'WRITE'): Scope {
+    const access = requireAccess(auth, 'users', minimum);
+    if (access.actor === 'platform' || access.visibility === VisibilityScope.ALL_BRANCHES) {
+      return { companyId: access.companyId, locationId: undefined, auth };
     }
-    if (!auth.membership) {
-      throw new NotFoundException({ code: ErrorCode.NOT_FOUND, message: 'User was not found.' });
-    }
-    if (!auth.membership.canManageUsers) {
-      throw new ForbiddenException({
-        code: ErrorCode.FORBIDDEN,
-        message: 'User management permission is required.',
-      });
-    }
-    if (auth.membership.visibility === VisibilityScope.ALL_BRANCHES) {
-      return { companyId: auth.membership.companyId, locationId: undefined, auth };
-    }
-    return {
-      companyId: auth.membership.companyId,
-      locationId: auth.membership.locationId,
-      auth,
-    };
+    return { companyId: access.companyId, locationId: access.locationId, auth };
   }
 
   private whereFor(scope: Scope, q?: string): Prisma.MembershipWhereInput {
@@ -288,7 +273,12 @@ export class UsersService {
     const and: Prisma.MembershipWhereInput[] = [];
     if (limited) {
       // A branch-scoped manager reaches staff on that branch who cannot manage users, and their own record.
-      and.push({ OR: [{ role: { canManageUsers: false } }, { userId: scope.auth.userId }] });
+      and.push({
+        OR: [
+          { role: { permissions: { none: { area: 'users', level: { in: [...MANAGING_LEVELS] } } } } },
+          { userId: scope.auth.userId },
+        ],
+      });
     }
     if (q) {
       and.push({
@@ -315,8 +305,12 @@ export class UsersService {
   ) {
     // Holds the role row until commit, so a concurrent scope change waits and then sees this membership.
     await tx.$queryRaw`SELECT id FROM roles WHERE id = ${roleId} AND company_id = ${scope.companyId} FOR SHARE`;
-    const role = await tx.role.findFirst({ where: { id: roleId, companyId: scope.companyId } });
+    const role = await tx.role.findFirst({
+      where: { id: roleId, companyId: scope.companyId },
+      include: { permissions: { select: { area: true, level: true } } },
+    });
     if (!role) throw this.roleNotFound();
+    const roleManagesUsers = atLeast(toPermissionMap(role.permissions).users, 'WRITE');
     const scoped = scope.locationId !== undefined;
     if (scoped && role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
       throw new ForbiddenException({
@@ -325,11 +319,25 @@ export class UsersService {
       });
     }
     const keepsOwnRole = existing !== null && existing.roleId === role.id;
-    if (scoped && role.canManageUsers && !keepsOwnRole) {
+    if (scoped && roleManagesUsers && !keepsOwnRole) {
       throw new ForbiddenException({
         code: ErrorCode.FORBIDDEN,
         message: 'This role is outside your scope.',
       });
+    }
+    // Decision L: a member never grants a role above their own level in any area.
+    const actorPermissions = scope.auth.actor === 'member' ? scope.auth.membership?.permissions : undefined;
+    if (actorPermissions && !keepsOwnRole) {
+      const rolePermissions = toPermissionMap(role.permissions);
+      const above = (Object.keys(rolePermissions) as (keyof typeof rolePermissions)[]).some(
+        (area) => !atLeast(actorPermissions[area], rolePermissions[area]),
+      );
+      if (above) {
+        throw new ForbiddenException({
+          code: ErrorCode.FORBIDDEN,
+          message: 'This role has more permissions than yours.',
+        });
+      }
     }
     if (role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
       if (locationId) {
@@ -427,6 +435,12 @@ export class UsersService {
         message: 'Another user in this company already uses this username.',
       });
     }
+    if (isScopeMismatch(error)) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: 'The role scope changed. Choose the role and branch again.',
+      });
+    }
     throw error;
   }
 }
@@ -463,7 +477,7 @@ function toDto(row: MembershipRow): CustomerUserDto {
       key: row.role.key,
       name: row.role.name,
       visibilityScope: row.role.visibilityScope,
-      canManageUsers: row.role.canManageUsers,
+      canManageUsers: atLeast(toPermissionMap(row.role.permissions).users, 'WRITE'),
     },
     location: row.location
       ? { id: row.location.id, name: row.location.name, status: row.location.status }

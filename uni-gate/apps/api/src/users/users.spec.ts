@@ -202,7 +202,7 @@ describe('customer users', () => {
     const alpha = await createCompany(cookie, 'Alpha', 'alpha', 'tradivia');
     const home = await locationId(alpha.id, 'Alpha');
     const depot = await createLocation(cookie, alpha.id, 'Depot');
-    const ownRole = await createRole(cookie, alpha.id, { key: 'LOCAL_LEAD', name: 'Local lead', visibilityScope: 'OWN', canManageUsers: true });
+    const ownRole = await createRole(cookie, alpha.id, { key: 'LOCAL_LEAD', name: 'Local lead', visibilityScope: 'OWN', managesUsers: true });
     await createUser(cookie, alpha.id, userBody({ name: 'Chief', username: 'chief', roleKey: 'GENERAL_MANAGER', locationId: null }));
     await createUser(cookie, alpha.id, userBody({ name: 'Home Lead', username: 'home', roleKey: 'SUPERVISOR', locationId: home }));
     await createUser(cookie, alpha.id, userBody({ name: 'Depot Lead', username: 'depot', roleKey: 'SUPERVISOR', locationId: depot }));
@@ -481,7 +481,7 @@ describe('customer users', () => {
   function createRole(
     cookie: string,
     companyId: string,
-    input: { key: string; name: string; visibilityScope: string; canManageUsers: boolean },
+    input: { key: string; name: string; visibilityScope: string; managesUsers: boolean },
   ) {
     return request(app.getHttpServer())
       .post(`/api/platform/companies/${companyId}/roles`)
@@ -490,8 +490,8 @@ describe('customer users', () => {
       .send({
         name: input.name,
         key: input.key,
-        canManageUsers: input.canManageUsers,
         visibilityScope: input.visibilityScope,
+        permissions: input.managesUsers ? [{ area: 'users', level: 'WRITE' }, { area: 'branches', level: 'READ' }] : [],
         editRequiresApproval: false,
         deleteRequiresApproval: false,
       });

@@ -1,13 +1,17 @@
 import { api } from '@/lib/api';
+import type { PermissionArea, PermissionLevel, PermissionMap } from '@/lib/permission-areas';
 
 export type CompanyRole = {
   id: string;
   key: string;
   name: string;
+  /** Derived on the server: users area at Write or higher. */
   canManageUsers: boolean;
   visibilityScope: 'OWN' | 'BRANCH' | 'ALL_BRANCHES';
   editRequiresApproval: boolean;
   deleteRequiresApproval: boolean;
+  /** Every area, None included. */
+  permissions: PermissionMap;
 };
 
 type RoleList = { items: CompanyRole[] };
@@ -15,10 +19,11 @@ type RoleList = { items: CompanyRole[] };
 type RoleInput = {
   name: string;
   key: string;
-  canManageUsers: boolean;
   visibilityScope: CompanyRole['visibilityScope'];
   editRequiresApproval: boolean;
   deleteRequiresApproval: boolean;
+  /** Supplied areas are replaced. Areas left out keep their level. */
+  permissions?: { area: PermissionArea; level: PermissionLevel }[];
 };
 
 type Failure = { ok: false; code: string };

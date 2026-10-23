@@ -1,4 +1,19 @@
+import { atLeast, type PermissionArea, type PermissionLevel } from '@/lib/permission-areas';
 import type { AppSession, Location, Membership, Role, VisibilityScope } from '@/types/auth';
+
+/** Mirrors the server check. The server still decides; this only hides what would be refused. */
+export function hasLevel(session: AppSession, area: PermissionArea, minimum: PermissionLevel) {
+  if (isPlatform(session)) return true;
+  return atLeast(session.permissions?.[area], minimum);
+}
+
+export function canSeeBranches(session: AppSession) {
+  return hasLevel(session, 'branches', 'READ');
+}
+
+export function canSeeUsers(session: AppSession) {
+  return hasLevel(session, 'users', 'READ');
+}
 
 export function isPlatform(session: AppSession) {
   return session.actor === 'platform';
@@ -17,7 +32,7 @@ export function canManageUsers(session: AppSession) {
 }
 
 export function canSeeRoles(session: AppSession) {
-  return canManageUsers(session);
+  return hasLevel(session, 'roles', 'READ') || canManageUsers(session);
 }
 
 export function seesAllBranches(session: AppSession) {
@@ -37,7 +52,7 @@ export function visibleMemberships(
   companyId: string,
 ) {
   const rows = memberships.filter((item) => item.companyId === companyId);
-  if (!canManageUsers(session)) return [];
+  if (!canSeeUsers(session)) return [];
   if (isPlatform(session) || session.visibility === 'ALL_BRANCHES' || session.visibility === 'PLATFORM') {
     return rows;
   }

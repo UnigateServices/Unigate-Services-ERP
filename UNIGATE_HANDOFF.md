@@ -18,7 +18,9 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, Phase 9 platform audit list, Phase 10 foundation hardening (pull request #4), and removal of the web mock store (pull request #5).
 
-**Approved, not started:** the finance merge decisions in `docs/FINANCE_MERGE_PLAN.md` section 3. The next phase is F1 (role permission table). Do not start it until the user explicitly says so.
+**Implemented, waiting for acceptance:** phase F1 (role permissions by area), on branch `phase-f1-role-permissions`. Not merged until the user accepts it after manual testing. See "Phase F1" below.
+
+**Approved, not started:** phase 11 (managers manage branches, roles, and permissions) and phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md`. Do not start one until the user explicitly says so.
 
 **Not built:** finance, exchange, gold, aviation, engineering, and HR business logic.
 
@@ -69,7 +71,7 @@ Continuation document for a new Agent. It describes the repository after Phases 
 - A missing `CompanyModule` row is disabled. `PUT` creates a row only for a key in the payload. An operator in support is held to the same enabled check as a member. An operator with no support company gets `409` `CONFLICT` before the key is checked, including for an unknown key. After a company is known, an unknown key is `404` `NOT_FOUND` and a disabled or missing module is `403` `FORBIDDEN`. A module change writes an audit `UPDATE` with target type `module` and target id equal to the key only when the enabled flag actually changes. It does not change `authVersion` and it does not delete rows.
 - The development seed upserts any missing module key as disabled and does not change an existing `enabled` flag.
 - The platform audit list is read-only and PostgreSQL-backed. `GET /api/platform/access-log` uses `AuthGuard` and `PlatformGuard`. Filters are `page`, `pageSize`, and `companyId`. Default page size is 20 and the maximum is 100. Rows are ordered by `createdAt` descending, then `id` descending. Each item selects only the actor name and the company name and code, plus the audit fields. An unknown `companyId` is `404` `NOT_FOUND`. The web client is `uni-gate/apps/web/services/audit.ts`. The support log screen is in `uni-gate/apps/web/components/screens/platform-lists.tsx`. Tests are in `uni-gate/apps/api/src/platform/audit/access-log.spec.ts`.
-- Prisma schema and three migrations. No Phase 7, Phase 8, or Phase 9 migration.
+- Prisma schema and four migrations. No Phase 7, Phase 8, or Phase 9 migration. Phase F1 added the fourth.
 - Development-only seed: `npm run db:seed:dev` from `uni-gate`. It refuses `NODE_ENV=production`.
 
 **Planned, not implemented**
@@ -211,7 +213,7 @@ The API TypeScript module mode is `commonjs`. TRADIVIA's API uses `nodenext`. Th
 
 Schema: `uni-gate/packages/database/prisma/schema.prisma`.
 
-Models: `User`, `Company`, `Location`, `Role`, `Membership`, `CompanyModule`, `AuditEntry`.
+Models: `User`, `Company`, `Location`, `Role`, `RolePermission`, `Membership`, `CompanyModule`, `AuditEntry`.
 
 `User.name` is the display name. It is not a login name. Platform login uses `User.username`. Customer login uses `Membership.username`.
 
@@ -220,6 +222,7 @@ Migrations, in order:
 1. `20261004120000_foundation`
 2. `20261004180000_membership_company_integrity`
 3. `20261005093000_user_display_name`
+4. `20261023090000_role_permissions` (phase F1)
 
 No finance tables. After the Phase 2 cleanup, local `unigate` held only the development seed: companies `tradivia`, `ofoq`, `expired`, and `lastday`, plus their roles, locations, and users. Re-run `npm run db:seed:dev` on a later calendar day so `lastday` stays that day and `expired` stays the day before.
 
@@ -343,6 +346,34 @@ Fixes:
 
 Results on 21 October 2026 (Linux, PostgreSQL 16 on port 5433): `tsc --noEmit` for API and web exit 0, `nest build` exit 0, `next build` exit 0, `npm run test:api` 12 suites and 58 tests passed in about 16 s (31 s before the setup change).
 
+## Phase F1: role permissions (23 October 2026)
+
+- Table `role_permissions` (`RolePermission`): one level per role and area. Levels are `NONE < READ < WRITE < APPROVE < ADMIN`; each includes the ones before it. A missing row is `NONE`, and `NONE` is never stored (CHECK). Administration areas `users`, `branches`, `roles` accept `READ` or `WRITE` only (CHECK). Module areas are the six module keys. The list lives in `packages/shared/src/permissions.ts` (`PERMISSION_AREAS`), mirrored in `apps/web/lib/permission-areas.ts`.
+- `Role.canManageUsers` was removed. Migration `20261023090000_role_permissions` moved it to `users` = `WRITE` (and `roles` = `READ`), and gave every existing role `branches` = `READ`, so nobody lost access. API responses still return `canManageUsers`, derived from `users >= WRITE`.
+- Every permission check goes through `apps/api/src/auth/access.ts`: `accessFor(auth, area)` returns the level, scope, location, membership id, and approval flags for the session company; `requireAccess(auth, area, minimum)` refuses with `403 FORBIDDEN`. Do not compare role keys in code.
+- Permissions are read from PostgreSQL on every request (with the role), so a change applies on the next request. `authVersion` does not change.
+- Platform operator in support: `WRITE` in administration areas, `READ` in every module (`platformSupportPermissions`). Outside support, `/api/auth/me` returns `permissions: null`.
+- Routes: `GET /api/users` and `GET /api/users/:id` need `users >= READ`; create, edit, and password reset need `users >= WRITE`. `GET /api/locations` needs `branches >= READ` or `users >= WRITE` (a user manager picks branches in the user form). `GET /api/roles` needs `roles >= READ` or `users >= WRITE`. A branch-scoped manager still cannot reach or assign a role with `users >= WRITE`.
+- Decision L is enforced for user assignment: a member cannot create or move a user into a role that is above the member's own level in any area (`403 FORBIDDEN`). Keeping a user's current role is allowed.
+- The migration first checks existing memberships against the scope rule and stops, before changing anything, if any row breaks it.
+- Role routes (`POST`/`PATCH /api/platform/companies/:companyId/roles`) no longer accept `canManageUsers`. They accept optional `permissions: [{ area, level }]`; supplied areas are replaced, others are kept, `NONE` deletes the row. Each area once, levels allowed per area, otherwise `400 VALIDATION_ERROR`. Responses include the full `permissions` map. Members still cannot edit roles or permissions (phase 11).
+- `GET /api/auth/me` returns `permissions` (full map) and, for members, `editRequiresApproval` and `deleteRequiresApproval`.
+- `Membership` has a unique `(companyId, id)` for later composite foreign keys (finance actors, decision A).
+- Triggers `memberships_scope_check` and `roles_scope_check` refuse (SQLSTATE 23514, message `ROLE_SCOPE_MISMATCH`) an `ALL_BRANCHES` membership with a location, a `BRANCH`/`OWN` membership without one, and a role scope change that would break its members. The services map that error to `409 CONFLICT`. Follow-up 6 is resolved.
+- Presets (`role-presets.ts`) carry permissions; company creation and the development seed write them. The seed resets preset roles and their permissions on every run.
+- Web: the role screen has a permission matrix (administration and modules). Navigation, the dashboard, the branch list, and the user list follow the levels. A user with `users = READ` sees the list without add or edit.
+- `@unigate/shared` and `@unigate/database` are consumed from their built `dist/` (gitignored). `npm run dev:api`, `build:api`, and `db:seed:dev` now run `build:shared` first, so a new export in shared is never missing at start. Before this, a pull that added shared exports failed with `TS2305` until shared was rebuilt by hand.
+- `packages/database/prisma/constraint-checks.sql` was brought up to date (it predated `users.name`) and covers the new rules.
+- Results (Linux, PostgreSQL 16, port 5433): `prisma validate` OK, `prisma migrate diff` from the migrated database to the schema: no difference, constraint script 24 PASS, `tsc --noEmit` API and web exit 0, `nest build` and `next build` exit 0, `npm run test:api` 13 suites and 69 tests passed.
+- An independent review found no cross-company leak and no self-escalation. Its fixes are in: the assignment guard above, the branch list for user managers, a new role starting at `branches = READ` in the web form, and the migration pre-check.
+
+Open follow-ups from the F1 review (for phase 11 or later):
+
+1. `users = READ` can open a user through the API (`GET /api/users/:id`), but the web shows the list only. Add a read-only user view if wanted.
+2. User lists treat `OWN` scope like `BRANCH` (pre-existing). A role with `users >= READ` and `OWN` scope sees its branch's staff. Decide whether `OWN` should see only itself.
+3. A role created through the API without `permissions` gets no rows (not even `branches = READ`). The web always sends the full matrix.
+4. `constraint-checks.sql` is not run by any script. Run it by hand with `psql` after a migration.
+
 ## Working method
 
 From 22 October 2026: Claude plans and writes the phase specification. Claude Code builds it. Cursor is no longer used. A separate Claude Code reviewer, who did not build the phase, reviews the branch. The user tests manually before every merge. For each phase, give the user a plain Arabic explanation of what was done, plus manual test steps with the expected result.
@@ -364,7 +395,7 @@ Still open:
 3. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
 4. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
 5. `POST /api/auth/password` does not count wrong current passwords toward the lockout.
-6. Role scope and membership location agree through application locks, not a database constraint. Planned as a database rule in phase F1.
+6. Resolved in phase F1: role scope and membership location agree through database triggers, in addition to the application locks.
 7. An `ALL_BRANCHES` manager can manage another `ALL_BRANCHES` manager. The user confirmed this is wanted (22 October 2026).
 
 ## 12. Exact next action for the next Agent
@@ -402,6 +433,7 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 - Do not give platform operators write access to module business data (finance and later modules). They read only.
 - Do not copy the TRADIVIA Prisma schema or its `Employee` login model.
 - Do not trust client-supplied company context.
+- Do not compare role keys or names in permission checks. Use `accessFor` or `requireAccess` with an area.
 - Do not replace approved architecture silently.
 - Do not continue to another phase without reporting results first.
 - Do not upgrade Prisma to 8.

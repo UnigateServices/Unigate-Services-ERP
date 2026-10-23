@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { PermissionMap } from '@/lib/permission-areas';
 import type { AppSession } from '@/types/auth';
 
 const STALE_SUPPORT_KEY = 'ug_support_company';
@@ -17,6 +18,7 @@ type MeResponse =
       userId: string;
       name: string;
       actingCompany: ActingCompany | null;
+      permissions: PermissionMap | null;
     }
   | {
       actor: 'member';
@@ -29,6 +31,7 @@ type MeResponse =
       locationName: string | null;
       visibility: 'OWN' | 'BRANCH' | 'ALL_BRANCHES';
       canManageUsers: boolean;
+      permissions: PermissionMap;
     };
 
 export async function loadSession(): Promise<AppSession | null> {
@@ -84,6 +87,7 @@ function toSession(me: MeResponse): AppSession {
       locationId: null,
       visibility: 'PLATFORM',
       canManageUsers: true,
+      permissions: me.permissions,
       expiresAt,
       actingCompany: me.actingCompany,
     };
@@ -99,6 +103,7 @@ function toSession(me: MeResponse): AppSession {
     locationId: me.locationId,
     visibility: me.visibility,
     canManageUsers: me.canManageUsers,
+    permissions: me.permissions,
     expiresAt,
     actingCompany: null,
   };

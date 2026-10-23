@@ -1,6 +1,7 @@
-import { ConflictException, HttpException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, Prisma, RecordStatus, VisibilityScope } from '@prisma/client';
-import { ErrorCode } from '@unigate/shared';
+import { ErrorCode, atLeast } from '@unigate/shared';
+import { accessFor, requireAccess } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -80,7 +81,10 @@ export class LocationsService {
   }
 
   async listForSession(auth: RequestAuth) {
-    const companyId = this.companyFromSession(auth);
+    // branches READ, or users WRITE: a user manager picks branches in the user form.
+    const branches = accessFor(auth, 'branches');
+    if (!atLeast(branches.level, 'READ')) requireAccess(auth, 'users', 'WRITE');
+    const companyId = branches.companyId;
     const locationId = this.visibleLocationId(auth);
     if (locationId === null) return { items: [] as LocationDto[] };
     const rows = await this.prisma.location.findMany({
@@ -89,25 +93,6 @@ export class LocationsService {
       select: { id: true, name: true, status: true },
     });
     return { items: rows.map(toCustomerLocation) };
-  }
-
-  private companyFromSession(auth: RequestAuth) {
-    if (auth.actor === 'platform') {
-      if (!auth.actingCompanyId) {
-        throw new ConflictException({
-          code: ErrorCode.CONFLICT,
-          message: 'A support company is required.',
-        });
-      }
-      return auth.actingCompanyId;
-    }
-    if (!auth.membership) {
-      throw new UnauthorizedException({
-        code: ErrorCode.UNAUTHORIZED,
-        message: 'Authentication is required.',
-      });
-    }
-    return auth.membership.companyId;
   }
 
   /**
