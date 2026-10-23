@@ -1,6 +1,7 @@
-import { ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { AuditAction, Prisma, VisibilityScope } from '@prisma/client';
-import { ErrorCode } from '@unigate/shared';
+import { ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditAction, PermissionLevel as DbPermissionLevel, Prisma, VisibilityScope } from '@prisma/client';
+import { ErrorCode, atLeast, type PermissionArea, type PermissionLevel, type PermissionMap } from '@unigate/shared';
+import { accessFor, toPermissionMap } from '../auth/access';
 import type { RequestAuth } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -8,43 +9,49 @@ type RoleRow = {
   id: string;
   key: string;
   name: string;
-  canManageUsers: boolean;
   visibilityScope: VisibilityScope;
   editRequiresApproval: boolean;
   deleteRequiresApproval: boolean;
-  companyId?: string;
+  companyId: string;
+  permissions: { area: string; level: DbPermissionLevel }[];
 };
 
 export type RoleDto = {
   id: string;
   key: string;
   name: string;
+  /** Derived: users area at WRITE or higher. */
   canManageUsers: boolean;
   visibilityScope: VisibilityScope;
   editRequiresApproval: boolean;
   deleteRequiresApproval: boolean;
+  /** Every area, NONE included. */
+  permissions: PermissionMap;
 };
 
 export type PlatformRoleDto = RoleDto & { companyId: string };
 
+export type PermissionInput = { area: PermissionArea; level: PermissionLevel };
+
 type RoleInput = {
   key: string;
   name: string;
-  canManageUsers: boolean;
   visibilityScope: VisibilityScope;
   editRequiresApproval: boolean;
   deleteRequiresApproval: boolean;
+  /** Areas supplied here are replaced. Areas left out keep their level. */
+  permissions?: PermissionInput[];
 };
 
 const roleSelect = {
   id: true,
   key: true,
   name: true,
-  canManageUsers: true,
   visibilityScope: true,
   editRequiresApproval: true,
   deleteRequiresApproval: true,
   companyId: true,
+  permissions: { select: { area: true, level: true } },
 } as const;
 
 @Injectable()
@@ -62,16 +69,15 @@ export class RolesService {
   }
 
   async create(companyId: string, input: RoleInput, actorUserId: string): Promise<PlatformRoleDto> {
+    const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.requireCompany(companyId, tx);
-        await this.assertKeyAvailable(tx, companyId, input.key);
-        const role = await tx.role.create({
-          data: { companyId, ...input },
-          select: roleSelect,
-        });
-        await this.audit(tx, actorUserId, companyId, role.id, AuditAction.CREATE);
-        return toPlatformRole(role);
+        await this.assertKeyAvailable(tx, companyId, fields.key);
+        const created = await tx.role.create({ data: { companyId, ...fields }, select: { id: true } });
+        if (permissions?.length) await applyPermissions(tx, companyId, created.id, permissions);
+        await this.audit(tx, actorUserId, companyId, created.id, AuditAction.CREATE);
+        return toPlatformRole(await this.loadRole(tx, companyId, created.id));
       });
     } catch (error) {
       this.rethrowKnown(error);
@@ -79,6 +85,7 @@ export class RolesService {
   }
 
   async update(companyId: string, roleId: string, input: RoleInput, actorUserId: string): Promise<PlatformRoleDto> {
+    const { permissions, ...fields } = input;
     try {
       return await this.prisma.$transaction(async (tx) => {
         // Waits for in-flight user assignments to this role, so the scope check below sees them.
@@ -88,64 +95,43 @@ export class RolesService {
           select: { id: true, visibilityScope: true },
         });
         if (!existing) throw this.roleNotFound();
-        if (existing.visibilityScope !== input.visibilityScope) {
-          await this.assertScopeCompatible(tx, roleId, input.visibilityScope);
+        if (existing.visibilityScope !== fields.visibilityScope) {
+          await this.assertScopeCompatible(tx, roleId, fields.visibilityScope);
         }
-        await this.assertKeyAvailable(tx, companyId, input.key, roleId);
-        const role = await tx.role.update({
+        await this.assertKeyAvailable(tx, companyId, fields.key, roleId);
+        await tx.role.update({
           where: { companyId_id: { companyId, id: roleId } },
-          data: input,
-          select: roleSelect,
+          data: fields,
         });
-        await this.audit(tx, actorUserId, companyId, role.id, AuditAction.UPDATE);
-        return toPlatformRole(role);
+        if (permissions?.length) await applyPermissions(tx, companyId, roleId, permissions);
+        await this.audit(tx, actorUserId, companyId, roleId, AuditAction.UPDATE);
+        return toPlatformRole(await this.loadRole(tx, companyId, roleId));
       });
     } catch (error) {
       this.rethrowKnown(error);
     }
   }
 
+  /** Read by members with roles READ, or users WRITE (the user form needs the role list). */
   async listForSession(auth: RequestAuth) {
-    const companyId = this.companyFromSession(auth);
+    const roles = accessFor(auth, 'roles');
+    const users = accessFor(auth, 'users');
+    if (!atLeast(roles.level, 'READ') && !atLeast(users.level, 'WRITE')) {
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'You do not have permission for this action.',
+      });
+    }
     const rows = await this.prisma.role.findMany({
-      where: { companyId },
+      where: { companyId: roles.companyId },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        canManageUsers: true,
-        visibilityScope: true,
-        editRequiresApproval: true,
-        deleteRequiresApproval: true,
-      },
+      select: roleSelect,
     });
     return { items: rows.map(toCustomerRole) };
   }
 
-  private companyFromSession(auth: RequestAuth) {
-    if (auth.actor === 'platform') {
-      if (!auth.actingCompanyId) {
-        throw new ConflictException({
-          code: ErrorCode.CONFLICT,
-          message: 'A support company is required.',
-        });
-      }
-      return auth.actingCompanyId;
-    }
-    if (!auth.membership) {
-      throw new UnauthorizedException({
-        code: ErrorCode.UNAUTHORIZED,
-        message: 'Authentication is required.',
-      });
-    }
-    if (!auth.membership.canManageUsers) {
-      throw new ForbiddenException({
-        code: ErrorCode.FORBIDDEN,
-        message: 'User management permission is required.',
-      });
-    }
-    return auth.membership.companyId;
+  private async loadRole(tx: Prisma.TransactionClient, companyId: string, roleId: string) {
+    return tx.role.findFirstOrThrow({ where: { id: roleId, companyId }, select: roleSelect });
   }
 
   private async assertScopeCompatible(tx: Prisma.TransactionClient, roleId: string, nextScope: VisibilityScope) {
@@ -158,10 +144,7 @@ export class RolesService {
         ? memberships.some((membership) => membership.locationId !== null)
         : memberships.some((membership) => membership.locationId === null);
     if (!invalid) return;
-    throw new ConflictException({
-      code: ErrorCode.CONFLICT,
-      message: 'Assigned users must be made compatible before this role scope can change.',
-    });
+    throw this.scopeConflict();
   }
 
   private async requireCompany(companyId: string, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
@@ -218,6 +201,13 @@ export class RolesService {
     });
   }
 
+  private scopeConflict() {
+    return new ConflictException({
+      code: ErrorCode.CONFLICT,
+      message: 'Assigned users must be made compatible before this role scope can change.',
+    });
+  }
+
   private rethrowKnown(error: unknown): never {
     if (error instanceof HttpException) throw error;
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -226,31 +216,53 @@ export class RolesService {
         message: 'Another role in this company already uses this key.',
       });
     }
+    if (isScopeMismatch(error)) throw this.scopeConflict();
     throw error;
   }
 }
 
-function toPlatformRole(row: RoleRow & { companyId: string }): PlatformRoleDto {
-  return {
-    id: row.id,
-    key: row.key,
-    name: row.name,
-    canManageUsers: row.canManageUsers,
-    visibilityScope: row.visibilityScope,
-    editRequiresApproval: row.editRequiresApproval,
-    deleteRequiresApproval: row.deleteRequiresApproval,
-    companyId: row.companyId,
-  };
+/**
+ * Sets each supplied area. NONE deletes the row, because a missing row is NONE.
+ * Callers validate areas, levels, and duplicates first (RoleBodyDto).
+ */
+export async function applyPermissions(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  roleId: string,
+  permissions: PermissionInput[],
+) {
+  for (const { area, level } of permissions) {
+    if (level === 'NONE') {
+      await tx.rolePermission.deleteMany({ where: { companyId, roleId, area } });
+      continue;
+    }
+    await tx.rolePermission.upsert({
+      where: { companyId_roleId_area: { companyId, roleId, area } },
+      create: { companyId, roleId, area, level },
+      update: { level },
+    });
+  }
+}
+
+/** The database trigger that keeps role scope and membership location in agreement. */
+export function isScopeMismatch(error: unknown) {
+  return error instanceof Error && error.message.includes('ROLE_SCOPE_MISMATCH');
 }
 
 function toCustomerRole(row: RoleRow): RoleDto {
+  const permissions = toPermissionMap(row.permissions);
   return {
     id: row.id,
     key: row.key,
     name: row.name,
-    canManageUsers: row.canManageUsers,
+    canManageUsers: atLeast(permissions.users, 'WRITE'),
     visibilityScope: row.visibilityScope,
     editRequiresApproval: row.editRequiresApproval,
     deleteRequiresApproval: row.deleteRequiresApproval,
+    permissions,
   };
+}
+
+function toPlatformRole(row: RoleRow): PlatformRoleDto {
+  return { ...toCustomerRole(row), companyId: row.companyId };
 }

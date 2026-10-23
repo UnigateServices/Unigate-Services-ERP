@@ -446,13 +446,23 @@ a {
 .filters input,
 .filters select,
 .field input,
-.field select {
+.field select,
+.permission-table select {
   min-height: 44px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-base);
   color: var(--text-primary);
   padding-inline: 0.75rem;
+}
+
+.permission-table th[scope='rowgroup'] {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.permission-table select {
+  min-width: 8rem;
 }
 
 .table-wrap {

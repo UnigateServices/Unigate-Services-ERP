@@ -8,6 +8,8 @@ export type VisibilityScope = 'OWN' | 'BRANCH' | 'ALL_BRANCHES';
 
 export type SessionVisibility = VisibilityScope | 'PLATFORM';
 
+import type { PermissionMap } from '@/lib/permission-areas';
+
 export type ModuleKey = 'finance' | 'exchange' | 'gold' | 'aviation' | 'engineering' | 'hr';
 
 export type CompanyStatus = 'ACTIVE' | 'SUSPENDED';
@@ -39,7 +41,10 @@ export type AppSession = {
   roleName: string | null;
   locationId: string | null;
   visibility: SessionVisibility;
+  /** Derived on the server: users area at WRITE or higher. */
   canManageUsers: boolean;
+  /** Levels in the session company. Null for an operator outside support. */
+  permissions: PermissionMap | null;
   expiresAt: number;
   actingCompany: {
     id: string;

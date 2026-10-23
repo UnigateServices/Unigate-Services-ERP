@@ -101,9 +101,15 @@ describe('platform support context', () => {
         companyId: active.id,
         key: 'OWNER',
         name: 'Owner',
-        canManageUsers: true,
         visibilityScope: 'ALL_BRANCHES',
       },
+    });
+    await prisma.rolePermission.createMany({
+      data: [
+        { companyId: active.id, roleId: role.id, area: 'users', level: 'WRITE' },
+        { companyId: active.id, roleId: role.id, area: 'branches', level: 'READ' },
+        { companyId: active.id, roleId: role.id, area: 'roles', level: 'READ' },
+      ],
     });
     const member = await prisma.user.create({
       data: { kind: UserKind.MEMBER, name: 'Owner', passwordHash: await passwords.hash('Owner1234'), status: UserStatus.ACTIVE },

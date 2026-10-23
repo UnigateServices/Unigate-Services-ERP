@@ -4,7 +4,7 @@ import { ErrorCode, MODULE_KEYS, isSubscriptionExpired, todayInDamascus, type Mo
 import { PrismaService } from '../../prisma/prisma.service';
 import { SessionService } from '../../auth/session.service';
 import type { RequestAuth } from '../../auth/auth.service';
-import { ROLE_PRESETS } from './role-presets';
+import { ROLE_PRESETS, presetPermissionRows } from './role-presets';
 
 type CompanyRecord = {
   id: string;
@@ -244,12 +244,11 @@ export class CompaniesService {
         status: RecordStatus.ACTIVE,
       },
     });
-    await tx.role.createMany({
-      data: ROLE_PRESETS[input.preset].map((role) => ({
-        companyId: company.id,
-        ...role,
-      })),
-    });
+    for (const template of ROLE_PRESETS[input.preset]) {
+      const { permissions: _permissions, ...fields } = template;
+      const role = await tx.role.create({ data: { companyId: company.id, ...fields }, select: { id: true } });
+      await tx.rolePermission.createMany({ data: presetPermissionRows(company.id, role.id, template) });
+    }
     const enabled = new Set(input.modules);
     await tx.companyModule.createMany({
       data: MODULE_KEYS.map((moduleKey) => ({

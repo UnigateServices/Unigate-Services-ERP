@@ -238,9 +238,8 @@ describe('locations', () => {
     const own = await request(app.getHttpServer()).get('/api/locations').query({ companyId: beta.id }).set('Cookie', ownCookie).expect(200);
     expect(own.body.items.map((item: { id: string }) => item.id)).toEqual([home.id]);
 
-    const unassigned = await loginMember('alpha', await member(alpha.id, 'loose', 'EMPLOYEE', null));
-    const none = await request(app.getHttpServer()).get('/api/locations').set('Cookie', unassigned).expect(200);
-    expect(none.body.items).toEqual([]);
+    // A branch or own-scope member without a branch can no longer exist: the database refuses it.
+    await expect(member(alpha.id, 'loose', 'EMPLOYEE', null)).rejects.toThrow(/ROLE_SCOPE_MISMATCH/);
 
     const betaNames = (
       await request(app.getHttpServer()).get(`/api/platform/companies/${beta.id}/locations`).set('Cookie', cookie).expect(200)
@@ -279,7 +278,7 @@ describe('locations', () => {
     const alpha = await createCompany(cookie, 'Alpha', 'alpha');
     const home = await prisma.location.findFirstOrThrow({ where: { companyId: alpha.id, name: 'Alpha' } });
     await prisma.location.update({ where: { id: home.id }, data: { status: 'INACTIVE' } });
-    const username = await member(alpha.id, 'owner', 'OWNER', home.id);
+    const username = await member(alpha.id, 'staff', 'STAFF', home.id);
     const memberCookie = await loginMember('alpha', username);
     const listed = await request(app.getHttpServer()).get('/api/locations').set('Cookie', memberCookie).expect(200);
     expect(listed.body.items).toEqual([expect.objectContaining({ id: home.id, status: 'INACTIVE' })]);
@@ -320,7 +319,7 @@ describe('locations', () => {
     expect(role.visibilityScope).toBe(
       roleKey === 'GENERAL_MANAGER' || roleKey === 'OWNER'
         ? VisibilityScope.ALL_BRANCHES
-        : roleKey === 'SUPERVISOR'
+        : roleKey === 'SUPERVISOR' || roleKey === 'STAFF'
           ? VisibilityScope.BRANCH
           : VisibilityScope.OWN,
     );

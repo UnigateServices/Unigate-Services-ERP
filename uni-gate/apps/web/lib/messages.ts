@@ -178,6 +178,19 @@ export type Messages = {
   deleteApproval: string;
   approvalHint: string;
   rolesReadOnly: string;
+  permissionsTitle: string;
+  permissionsHint: string;
+  permissionsAdminGroup: string;
+  permissionsModuleGroup: string;
+  areaUsers: string;
+  areaBranches: string;
+  areaRoles: string;
+  levelNONE: string;
+  levelREAD: string;
+  levelWRITE: string;
+  levelAPPROVE: string;
+  levelADMIN: string;
+  usersReadOnly: string;
   modulesOverview: string;
   ready: string;
   placeholderTitle: string;
@@ -297,7 +310,7 @@ const ar: Messages = {
   editSubscription: 'تعديل الاشتراك',
   enterCompany: 'الدخول إلى الشركة',
   enterTitle: 'الدخول للدعم',
-  enterBody: 'سيُسجَّل الدخول. ترى كل الفروع، والتعديل والحذف مباشر دون موافقة الموظف.',
+  enterBody: 'سيُسجَّل الدخول. ترى كل الفروع، وتدير المستخدمين والفروع والأدوار. بيانات الوحدات للقراءة فقط.',
   countsBranches: 'الفروع',
   countsUsers: 'المستخدمون',
   countsUsersLater: 'يُربط لاحقاً',
@@ -370,8 +383,21 @@ const ar: Messages = {
   manageUsersFlag: 'إدارة المستخدمين',
   editApproval: 'التعديل يحتاج موافقة',
   deleteApproval: 'الحذف يحتاج موافقة',
-  approvalHint: 'مشغّل Unigate يتجاوز الموافقة عند الدعم.',
+  approvalHint: 'مشغّل Unigate في الدعم لا يطلب الموافقة ولا يعطيها، ويقرأ بيانات الوحدات فقط.',
   rolesReadOnly: 'تعديل الأدوار من Unigate.',
+  permissionsTitle: 'الصلاحيات',
+  permissionsHint: 'كل مستوى يشمل ما قبله. مجالات الإدارة تتوقف عند "كتابة". مستويات الوحدات تُطبَّق عندما تعمل كل وحدة.',
+  permissionsAdminGroup: 'إدارة الشركة',
+  permissionsModuleGroup: 'الوحدات',
+  areaUsers: 'المستخدمون',
+  areaBranches: 'الفروع',
+  areaRoles: 'الأدوار والصلاحيات',
+  levelNONE: 'لا شيء',
+  levelREAD: 'قراءة',
+  levelWRITE: 'كتابة',
+  levelAPPROVE: 'موافقة',
+  levelADMIN: 'إدارة',
+  usersReadOnly: 'عرض فقط. إضافة المستخدمين وتعديلهم تحتاج مستوى "كتابة".',
   modulesOverview: 'الوحدات',
   ready: 'جاهزة',
   placeholderTitle: 'هذا القسم غير جاهز بعد.',
@@ -491,7 +517,7 @@ const en: Messages = {
   editSubscription: 'Edit subscription',
   enterCompany: 'Enter company',
   enterTitle: 'Enter for support',
-  enterBody: 'This entry is logged. You see every branch, and edits and deletes skip employee approval.',
+  enterBody: 'This entry is logged. You see every branch and manage users, branches, and roles. Module data is read only.',
   countsBranches: 'Branches',
   countsUsers: 'Users',
   countsUsersLater: 'Connects later',
@@ -562,10 +588,23 @@ const en: Messages = {
   keyTaken: 'This key is already used in the company.',
   scopeConflict: 'Assigned users must be made compatible before this role scope can change.',
   manageUsersFlag: 'Manage users',
-  editApproval: 'Edits edits need approval',
-  deleteApproval: 'Its deletes need approval',
-  approvalHint: 'A Unigate operator bypasses approval during support.',
+  editApproval: 'Edits need approval',
+  deleteApproval: 'Deletes need approval',
+  approvalHint: 'A Unigate operator in support neither requests nor gives approval, and only reads module data.',
   rolesReadOnly: 'Role changes are made by Unigate.',
+  permissionsTitle: 'Permissions',
+  permissionsHint: 'Each level includes the ones before it. Administration areas stop at Write. Module levels apply once each module is live.',
+  permissionsAdminGroup: 'Company administration',
+  permissionsModuleGroup: 'Modules',
+  areaUsers: 'Users',
+  areaBranches: 'Branches',
+  areaRoles: 'Roles and permissions',
+  levelNONE: 'None',
+  levelREAD: 'Read',
+  levelWRITE: 'Write',
+  levelAPPROVE: 'Approve',
+  levelADMIN: 'Admin',
+  usersReadOnly: 'View only. Adding and editing users needs the Write level.',
   modulesOverview: 'Modules',
   ready: 'Ready',
   placeholderTitle: 'This section is not ready yet.',

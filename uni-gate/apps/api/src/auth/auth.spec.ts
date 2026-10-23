@@ -74,6 +74,7 @@ describe('authentication', () => {
       userId: user.id,
       name: 'Operator',
       actingCompany: null,
+      permissions: null,
     });
     expect(JSON.stringify(me.body)).not.toMatch(/priceUsd|passwordHash|expiresOn/);
   });
@@ -256,15 +257,22 @@ describe('authentication', () => {
   it('reads role changes from the database without changing authVersion', async () => {
     const member = await memberUser({ code: 'tradivia', username: 'manager', password: 'Manager1' });
     const cookie = await loginMember('tradivia', 'manager', 'Manager1');
+    const before = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie).expect(200);
+    expect(before.body.permissions.users).toBe('WRITE');
     await prisma.role.update({
       where: { id: member.roleId },
-      data: { key: 'MONITOR', name: 'Monitor', canManageUsers: false, visibilityScope: VisibilityScope.BRANCH },
+      data: { key: 'MONITOR', name: 'Monitor' },
+    });
+    await prisma.rolePermission.update({
+      where: { companyId_roleId_area: { companyId: member.companyId, roleId: member.roleId, area: 'users' } },
+      data: { level: 'READ' },
     });
     const me = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', cookie).expect(200);
     expect(me.body.roleKey).toBe('MONITOR');
     expect(me.body.roleName).toBe('Monitor');
     expect(me.body.canManageUsers).toBe(false);
-    expect(me.body.visibility).toBe('BRANCH');
+    expect(me.body.permissions.users).toBe('READ');
+    expect(me.body.visibility).toBe('ALL_BRANCHES');
     const user = await prisma.user.findUnique({ where: { id: member.userId } });
     expect(user?.authVersion).toBe(1);
   });
@@ -380,9 +388,15 @@ describe('authentication', () => {
         companyId: company.id,
         key: 'GENERAL_MANAGER',
         name: 'General manager',
-        canManageUsers: true,
         visibilityScope: VisibilityScope.ALL_BRANCHES,
       },
+    });
+    await prisma.rolePermission.createMany({
+      data: [
+        { companyId: company.id, roleId: role.id, area: 'users', level: 'WRITE' },
+        { companyId: company.id, roleId: role.id, area: 'branches', level: 'READ' },
+        { companyId: company.id, roleId: role.id, area: 'roles', level: 'READ' },
+      ],
     });
     const user = await prisma.user.create({
       data: {

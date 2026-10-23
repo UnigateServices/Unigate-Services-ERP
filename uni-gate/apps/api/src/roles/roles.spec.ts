@@ -140,7 +140,15 @@ describe('roles', () => {
       .patch(`/api/platform/companies/${alpha.id}/roles/${roleId}`)
       .set('Origin', ORIGIN)
       .set('Cookie', cookie)
-      .send(roleBody({ key: 'TELLER', name: 'Teller', canManageUsers: true, editRequiresApproval: false, deleteRequiresApproval: true }))
+      .send(
+        roleBody({
+          key: 'TELLER',
+          name: 'Teller',
+          permissions: [{ area: 'users', level: 'WRITE' }],
+          editRequiresApproval: false,
+          deleteRequiresApproval: true,
+        }),
+      )
       .expect(200);
     expect(renamed.body).toMatchObject({
       id: roleId,
@@ -151,13 +159,15 @@ describe('roles', () => {
       deleteRequiresApproval: true,
       companyId: alpha.id,
     });
+    expect(renamed.body.permissions.users).toBe('WRITE');
+    expect(renamed.body.permissions.finance).toBe('NONE');
 
     await createRole(cookie, alpha.id, roleBody({ key: 'CASHIER' }));
     const clash = await request(app.getHttpServer())
       .patch(`/api/platform/companies/${alpha.id}/roles/${roleId}`)
       .set('Origin', ORIGIN)
       .set('Cookie', cookie)
-      .send(roleBody({ key: 'CASHIER', name: 'Teller', canManageUsers: true }))
+      .send(roleBody({ key: 'CASHIER', name: 'Teller' }))
       .expect(409);
     expect(clash.body.code).toBe('KEY_TAKEN');
     expect((await prisma.role.findUniqueOrThrow({ where: { id: roleId } })).key).toBe('TELLER');
@@ -243,7 +253,7 @@ describe('roles', () => {
     expect(invalid).toBe(0);
   });
 
-  it('applies canManageUsers on the next request without changing authVersion', async () => {
+  it('applies a permission change on the next request without changing authVersion', async () => {
     await platformUser();
     const cookie = await loginPlatform();
     const alpha = await createCompany(cookie, 'Alpha', 'alpha');
@@ -262,13 +272,19 @@ describe('roles', () => {
     const deniedStaff = await request(app.getHttpServer()).get('/api/roles').set('Cookie', staffCookie).expect(403);
     expect(deniedStaff.body.code).toBe('FORBIDDEN');
 
-    await patchRole(cookie, alpha.id, owner.id, roleFrom(owner, { canManageUsers: false })).expect(200);
+    await patchRole(
+      cookie,
+      alpha.id,
+      owner.id,
+      roleFrom(owner, { permissions: [{ area: 'users', level: 'NONE' }, { area: 'roles', level: 'NONE' }] }),
+    ).expect(200);
     const denied = await request(app.getHttpServer()).get('/api/roles').set('Cookie', memberCookie).expect(403);
     expect(denied.body.code).toBe('FORBIDDEN');
     const me = await request(app.getHttpServer()).get('/api/auth/me').set('Cookie', memberCookie).expect(200);
     expect(me.body.canManageUsers).toBe(false);
+    expect(me.body.permissions.roles).toBe('NONE');
     expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).authVersion).toBe(version);
-    expect(staff.canManageUsers).toBe(false);
+    expect(staff.key).toBe('STAFF');
   });
 
   it('follows support context into and out of a company', async () => {
@@ -390,7 +406,6 @@ function roleBody(overrides: Record<string, unknown> = {}) {
   return {
     name: 'Cashier',
     key: 'CASHIER',
-    canManageUsers: false,
     visibilityScope: 'BRANCH',
     editRequiresApproval: true,
     deleteRequiresApproval: false,
@@ -402,7 +417,6 @@ function roleFrom(
   role: {
     key: string;
     name: string;
-    canManageUsers: boolean;
     visibilityScope: string;
     editRequiresApproval: boolean;
     deleteRequiresApproval: boolean;
@@ -412,7 +426,6 @@ function roleFrom(
   return {
     name: role.name,
     key: role.key,
-    canManageUsers: role.canManageUsers,
     visibilityScope: role.visibilityScope,
     editRequiresApproval: role.editRequiresApproval,
     deleteRequiresApproval: role.deleteRequiresApproval,

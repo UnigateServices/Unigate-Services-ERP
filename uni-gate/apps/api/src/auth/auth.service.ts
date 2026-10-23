@@ -4,7 +4,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CompanyStatus, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
-import { ErrorCode, isSubscriptionExpired, todayInDamascus } from '@unigate/shared';
+import { ErrorCode, atLeast, isSubscriptionExpired, todayInDamascus, type PermissionMap } from '@unigate/shared';
+import { permissionMapFor, toPermissionMap } from './access';
 import { PrismaService } from '../prisma/prisma.service';
 import { PasswordService } from './password.service';
 import { SessionClaims, SessionService } from './session.service';
@@ -13,6 +14,7 @@ const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
 
 export type MemberContext = {
+  membershipId: string;
   companyId: string;
   companyName: string;
   companyCode: string;
@@ -21,7 +23,12 @@ export type MemberContext = {
   locationId: string | null;
   locationName: string | null;
   visibility: VisibilityScope;
+  /** Derived: users area at WRITE or higher. Kept for existing clients. */
   canManageUsers: boolean;
+  /** Read from the current role on every request, so a change applies on the next request. */
+  permissions: PermissionMap;
+  editRequiresApproval: boolean;
+  deleteRequiresApproval: boolean;
 };
 
 export type ActingCompany = {
@@ -149,9 +156,10 @@ export class AuthService {
     if (user.kind !== UserKind.MEMBER) return null;
     const membership = await this.prisma.membership.findUnique({
       where: { userId: user.id },
-      include: { company: true, role: true, location: true },
+      include: { company: true, role: { include: { permissions: true } }, location: true },
     });
     if (!membership || membership.company.status === CompanyStatus.SUSPENDED) return null;
+    const permissions = toPermissionMap(membership.role.permissions);
     if (isSubscriptionExpired(calendarDate(membership.company.expiresOn), todayInDamascus())) return null;
     return {
       userId: user.id,
@@ -161,6 +169,7 @@ export class AuthService {
       expiresAt: claims.expiresAt,
       name: user.name,
       membership: {
+        membershipId: membership.id,
         companyId: membership.company.id,
         companyName: membership.company.name,
         companyCode: membership.company.code,
@@ -169,7 +178,10 @@ export class AuthService {
         locationId: membership.location?.id ?? null,
         locationName: membership.location?.name ?? null,
         visibility: membership.role.visibilityScope,
-        canManageUsers: membership.role.canManageUsers,
+        canManageUsers: atLeast(permissions.users, 'WRITE'),
+        permissions,
+        editRequiresApproval: membership.role.editRequiresApproval,
+        deleteRequiresApproval: membership.role.deleteRequiresApproval,
       },
       actingCompany: null,
     };
@@ -189,6 +201,7 @@ export class AuthService {
               status: auth.actingCompany.status,
             }
           : null,
+        permissions: permissionMapFor(auth),
       };
     }
     const membership = auth.membership;
@@ -213,6 +226,9 @@ export class AuthService {
       locationName: membership.locationName,
       visibility: membership.visibility,
       canManageUsers: membership.canManageUsers,
+      permissions: membership.permissions,
+      editRequiresApproval: membership.editRequiresApproval,
+      deleteRequiresApproval: membership.deleteRequiresApproval,
     };
   }
 

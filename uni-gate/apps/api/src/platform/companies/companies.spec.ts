@@ -291,7 +291,9 @@ describe('platform companies', () => {
 
   async function memberOf(companyCode: string, username: string) {
     const company = await prisma.company.findFirstOrThrow({ where: { code: companyCode } });
-    const role = await prisma.role.findFirstOrThrow({ where: { companyId: company.id, canManageUsers: true } });
+    const role = await prisma.role.findFirstOrThrow({
+      where: { companyId: company.id, visibilityScope: 'ALL_BRANCHES', permissions: { some: { area: 'users', level: 'WRITE' } } },
+    });
     const user = await prisma.user.create({
       data: { kind: UserKind.MEMBER, name: username, passwordHash: await passwords.hash('Owner1234'), status: UserStatus.ACTIVE },
     });
