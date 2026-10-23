@@ -20,7 +20,9 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Accepted and merged:** phase F1 (role permissions by area), pull request #7. See "Phase F1" below.
 
-**Implemented, waiting for acceptance:** phase 11 (managers manage branches, roles, and permissions), on branch `phase-11-company-admin`. Not merged until the user accepts it after manual testing. See "Phase 11" below.
+**Accepted and merged:** phase 11 (managers manage branches, roles, and permissions), pull request #8. See "Phase 11" below.
+
+**Next for finance:** the finance owner starts the preparation in `docs/FINANCE_PREP_GUIDE.md` (P0 tests first, then P1 to P4), inside `Reference/erp-finance/`.
 
 **Approved, not started:** phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
 
