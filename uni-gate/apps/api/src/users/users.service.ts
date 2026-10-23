@@ -9,6 +9,15 @@ import {
 import { AuditAction, Prisma, RecordStatus, UserKind, UserStatus, VisibilityScope } from '@prisma/client';
 import { ErrorCode, atLeast, passwordIssue } from '@unigate/shared';
 import { requireAccess, toPermissionMap } from '../auth/access';
+import {
+  assertKeepsRoleEditors,
+  assertWithin,
+  countRoleEditors,
+  lockActorCeiling,
+  lockCompanyAdmins,
+  roleShape,
+  type ActorCeiling,
+} from '../auth/member-guard';
 import type { RequestAuth } from '../auth/auth.service';
 import { PasswordService } from '../auth/password.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -166,7 +175,8 @@ export class UsersService {
     const passwordHash = await this.passwords.hash(input.password);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const assignment = await this.resolveAssignment(tx, scope, input.roleId, input.locationId, null);
+        const actor = await this.lockActor(tx, scope);
+        const assignment = await this.resolveAssignment(tx, scope, input.roleId, input.locationId, null, actor);
         const user = await tx.user.create({
           data: {
             kind: UserKind.MEMBER,
@@ -199,16 +209,25 @@ export class UsersService {
   private async update(scope: Scope, userId: string, input: UpdateInput, auditActorId: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // A member edit can demote or deactivate an admin, so it takes the company lock first.
+        if (scope.auth.actor === 'member') await lockCompanyAdmins(tx, scope.companyId);
+        const actor = await this.lockActor(tx, scope);
+        const editorsBefore = actor ? await countRoleEditors(tx, scope.companyId) : 0;
         const existing = await tx.membership.findFirst({
           where: { ...this.whereFor(scope), userId },
           include: membershipInclude,
         });
         if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
         this.assertNotSelfAdmin(scope.auth, existing, input);
-        const assignment = await this.resolveAssignment(tx, scope, input.roleId, input.locationId, {
-          roleId: existing.roleId,
-          locationId: existing.locationId,
-        });
+        if (existing.userId !== scope.auth.userId) this.assertTargetWithin(actor, existing);
+        const assignment = await this.resolveAssignment(
+          tx,
+          scope,
+          input.roleId,
+          input.locationId,
+          { roleId: existing.roleId, locationId: existing.locationId },
+          actor,
+        );
         await tx.user.update({
           where: { id: existing.userId },
           data: {
@@ -231,6 +250,7 @@ export class UsersService {
           },
           include: membershipInclude,
         });
+        if (actor) assertKeepsRoleEditors(editorsBefore, await countRoleEditors(tx, scope.companyId));
         await this.audit(tx, auditActorId, scope.companyId, existing.userId, AuditAction.UPDATE);
         return toDto(membership);
       });
@@ -248,12 +268,14 @@ export class UsersService {
     }
     const passwordHash = await this.passwords.hash(password);
     await this.prisma.$transaction(async (tx) => {
+      const actor = await this.lockActor(tx, scope);
       const existing = await tx.membership.findFirst({
         where: { ...this.whereFor(scope), userId },
-        include: { user: true },
+        include: membershipInclude,
       });
       if (!existing || existing.user.kind !== UserKind.MEMBER) throw this.userNotFound();
       if (scope.auth.actor === 'member' && scope.auth.userId === userId) throw this.selfAdmin();
+      this.assertTargetWithin(actor, existing);
       await this.passwords.writeHash(tx, userId, passwordHash);
       await this.audit(tx, auditActorId, scope.companyId, userId, AuditAction.UPDATE);
     });
@@ -302,6 +324,7 @@ export class UsersService {
     roleId: string,
     locationId: string | null,
     existing: { roleId: string; locationId: string | null } | null,
+    actor: ActorCeiling | null,
   ) {
     // Holds the role row until commit, so a concurrent scope change waits and then sees this membership.
     await tx.$queryRaw`SELECT id FROM roles WHERE id = ${roleId} AND company_id = ${scope.companyId} FOR SHARE`;
@@ -325,20 +348,8 @@ export class UsersService {
         message: 'This role is outside your scope.',
       });
     }
-    // Decision L: a member never grants a role above their own level in any area.
-    const actorPermissions = scope.auth.actor === 'member' ? scope.auth.membership?.permissions : undefined;
-    if (actorPermissions && !keepsOwnRole) {
-      const rolePermissions = toPermissionMap(role.permissions);
-      const above = (Object.keys(rolePermissions) as (keyof typeof rolePermissions)[]).some(
-        (area) => !atLeast(actorPermissions[area], rolePermissions[area]),
-      );
-      if (above) {
-        throw new ForbiddenException({
-          code: ErrorCode.FORBIDDEN,
-          message: 'This role has more permissions than yours.',
-        });
-      }
-    }
+    // Decision L: a member never grants a role above their own levels or with fewer approvals.
+    if (!keepsOwnRole) assertWithin(actor, roleShape(role), 'This role has more permissions than yours.');
     if (role.visibilityScope === VisibilityScope.ALL_BRANCHES) {
       if (locationId) {
         throw new BadRequestException({
@@ -371,6 +382,23 @@ export class UsersService {
       });
     }
     return { roleId: role.id, locationId: location.id };
+  }
+
+  /**
+   * The acting member's current role, re-read and locked until commit, with users WRITE checked again.
+   * Null for a platform operator.
+   */
+  private async lockActor(tx: Prisma.TransactionClient, scope: Scope) {
+    const actor = await lockActorCeiling(tx, scope.auth);
+    if (scope.auth.actor === 'member' && (!actor || !atLeast(actor.permissions.users, 'WRITE'))) {
+      throw new ForbiddenException({ code: ErrorCode.FORBIDDEN, message: 'You do not have permission for this action.' });
+    }
+    return actor;
+  }
+
+  /** Decision L: a member never edits, deactivates, or resets a user whose role is above them. */
+  private assertTargetWithin(actor: ActorCeiling | null, target: MembershipRow) {
+    assertWithin(actor, roleShape(target.role), 'This user has more permissions than yours.');
   }
 
   private assertNotSelfAdmin(auth: RequestAuth, existing: MembershipRow, input: UpdateInput) {

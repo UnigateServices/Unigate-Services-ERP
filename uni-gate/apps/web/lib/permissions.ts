@@ -19,12 +19,14 @@ export function isPlatform(session: AppSession) {
   return session.actor === 'platform';
 }
 
+/** Phase 11: branches Write and all-branch scope. The server applies the same rule. */
 export function canCreateBranch(session: AppSession) {
-  return isPlatform(session);
+  return isPlatform(session) || (hasLevel(session, 'branches', 'WRITE') && session.visibility === 'ALL_BRANCHES');
 }
 
+/** Phase 11: roles Write and all-branch scope. The server applies the same rule. */
 export function canEditRoles(session: AppSession) {
-  return isPlatform(session);
+  return isPlatform(session) || (hasLevel(session, 'roles', 'WRITE') && session.visibility === 'ALL_BRANCHES');
 }
 
 export function canManageUsers(session: AppSession) {

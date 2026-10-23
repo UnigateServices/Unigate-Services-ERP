@@ -178,6 +178,9 @@ export type Messages = {
   deleteApproval: string;
   approvalHint: string;
   rolesReadOnly: string;
+  ownRoleReadOnly: string;
+  roleAboveYou: string;
+  lastRoleEditor: string;
   permissionsTitle: string;
   permissionsHint: string;
   permissionsAdminGroup: string;
@@ -384,7 +387,10 @@ const ar: Messages = {
   editApproval: 'التعديل يحتاج موافقة',
   deleteApproval: 'الحذف يحتاج موافقة',
   approvalHint: 'مشغّل Unigate في الدعم لا يطلب الموافقة ولا يعطيها، ويقرأ بيانات الوحدات فقط.',
-  rolesReadOnly: 'تعديل الأدوار من Unigate.',
+  rolesReadOnly: 'تعديل الأدوار يحتاج مستوى "كتابة" في الأدوار، ونطاق كل الفروع.',
+  ownRoleReadOnly: 'هذا دورك. لا يمكنك تعديل دورك أو صلاحياتك.',
+  roleAboveYou: 'لا يمكن أن يملك دور صلاحيات أعلى من صلاحياتك، أو موافقات أقل من موافقاتك.',
+  lastRoleEditor: 'هذا التغيير يترك الشركة بلا أي مستخدم يستطيع تعديل الأدوار.',
   permissionsTitle: 'الصلاحيات',
   permissionsHint: 'كل مستوى يشمل ما قبله. مجالات الإدارة تتوقف عند "كتابة". مستويات الوحدات تُطبَّق عندما تعمل كل وحدة.',
   permissionsAdminGroup: 'إدارة الشركة',
@@ -591,7 +597,10 @@ const en: Messages = {
   editApproval: 'Edits need approval',
   deleteApproval: 'Deletes need approval',
   approvalHint: 'A Unigate operator in support neither requests nor gives approval, and only reads module data.',
-  rolesReadOnly: 'Role changes are made by Unigate.',
+  rolesReadOnly: 'Changing roles needs Write in roles and all-branch scope.',
+  ownRoleReadOnly: 'This is your role. You cannot change your own role or permissions.',
+  roleAboveYou: 'A role cannot have more permissions, or fewer approvals, than yours.',
+  lastRoleEditor: 'This would leave the company without anyone who can edit roles.',
   permissionsTitle: 'Permissions',
   permissionsHint: 'Each level includes the ones before it. Administration areas stop at Write. Module levels apply once each module is live.',
   permissionsAdminGroup: 'Company administration',

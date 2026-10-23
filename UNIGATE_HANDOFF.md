@@ -18,9 +18,11 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Completed and accepted:** product decisions, foundation UI, frontend prototype, Phase 1 database foundation, composite company-integrity foreign keys, Phase 2 authentication, Phase 3 platform company administration, Phase 4 platform support context, Phase 5 branch and location management, Phase 6 role and permission management, Phase 7 users and memberships, Phase 8 company modules, Phase 9 platform audit list, Phase 10 foundation hardening (pull request #4), and removal of the web mock store (pull request #5).
 
-**Implemented, waiting for acceptance:** phase F1 (role permissions by area), on branch `phase-f1-role-permissions`. Not merged until the user accepts it after manual testing. See "Phase F1" below.
+**Accepted and merged:** phase F1 (role permissions by area), pull request #7. See "Phase F1" below.
 
-**Approved, not started:** phase 11 (managers manage branches, roles, and permissions) and phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md`. Do not start one until the user explicitly says so.
+**Implemented, waiting for acceptance:** phase 11 (managers manage branches, roles, and permissions), on branch `phase-11-company-admin`. Not merged until the user accepts it after manual testing. See "Phase 11" below.
+
+**Approved, not started:** phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
 
 **Not built:** finance, exchange, gold, aviation, engineering, and HR business logic.
 
@@ -373,6 +375,32 @@ Open follow-ups from the F1 review (for phase 11 or later):
 2. User lists treat `OWN` scope like `BRANCH` (pre-existing). A role with `users >= READ` and `OWN` scope sees its branch's staff. Decide whether `OWN` should see only itself.
 3. A role created through the API without `permissions` gets no rows (not even `branches = READ`). The web always sends the full matrix.
 4. `constraint-checks.sql` is not run by any script. Run it by hand with `psql` after a migration.
+
+## Phase 11: managers manage their company (23 October 2026)
+
+- New session-company routes. The company comes only from the session; a `companyId` in the body is rejected by validation.
+
+| Method | Path | Needs |
+|---|---|---|
+| POST | `/api/locations` | `branches = WRITE` and `ALL_BRANCHES` scope. Same rules as the platform route (`NAME_TAKEN`, audit `CREATE`). |
+| PATCH | `/api/locations/:locationId` | Same. Another company's branch is `404`. |
+| POST | `/api/roles` | `roles = WRITE` and `ALL_BRANCHES` scope. Same body as the platform route. |
+| PATCH | `/api/roles/:roleId` | Same. Another company's role is `404`. |
+
+- `requireCompanyAdmin(auth, area)` in `auth/access.ts` checks the level and the scope. A platform operator in support passes it and is not limited by the guards below.
+- Decision L guards for members, in `roles.service.ts` (`memberGuard`), run inside the transaction after the change and before commit: changing the role you hold is `409 CONFLICT`; touching a role above you in any area, or leaving any area above your own level, is `403 FORBIDDEN`. User assignment has the same ceiling (F1).
+- Member writes on users and roles run `auth/member-guard.ts` inside the transaction:
+  - `lockCompanyAdmins` locks the company row (`FOR NO KEY UPDATE`) first on every member user edit and role write, so two managers cannot demote each other at the same time.
+  - `lockActorCeiling` re-reads the acting member's role and holds it (`FOR SHARE`), so a request that started before a demotion cannot use the old levels.
+  - `assertWithin`: nothing a member creates, edits, assigns, resets, or deactivates may be above them. "Above" means a higher level in any area, or fewer approval flags than the member's own role.
+  - `assertKeepsRoleEditors`: a member write that would take the company from some active role editors (roles `WRITE`, `ALL_BRANCHES`) to none is `409 LAST_ROLE_EDITOR`. A company that had none is not blocked.
+  - Changing the role you hold is `409 OWN_ROLE`.
+  - Platform operators are not limited by these guards, so Unigate can always repair a company.
+- New error codes: `OWN_ROLE`, `LAST_ROLE_EDITOR`.
+- `MemberContext` carries `roleId`, and `/api/auth/me` returns `roleId` for members.
+- The independent review found a takeover path (a manager-made users-only role could reset or deactivate the general manager), two lockout paths (including a race), and approval flags not being capped. All four are fixed, with tests, and the reviewer's own probe now gets 403 or 409 in every case.
+- Web: `/app/branches` and `/app/roles` create and edit through the new routes. The permission matrix offers a member only the levels they hold. Their own role and roles above them open read-only with a note.
+- Tests: `roles/company-admin.spec.ts` (10 tests). `npm run test:api`: 14 suites, 79 tests passed. `tsc --noEmit`, `nest build`, and `next build` pass.
 
 ## Working method
 
