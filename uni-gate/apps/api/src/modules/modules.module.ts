@@ -10,5 +10,6 @@ import { PlatformModulesController } from './platform-modules.controller';
   imports: [AuthModule],
   controllers: [PlatformModulesController, ModulesController],
   providers: [ModulesService, PlatformGuard, ModuleAccessGuard],
+  exports: [ModulesService, ModuleAccessGuard],
 })
 export class ModulesModule {}

@@ -1,0 +1,693 @@
+{
+  "approvals": [],
+  "balances": {
+    "banks": [],
+    "custody": [],
+    "sham": [],
+    "vault": [
+      {
+        "amount": 20000000,
+        "currency": "SYP"
+      },
+      {
+        "amount": 5000,
+        "currency": "USD"
+      }
+    ]
+  },
+  "banks": [
+    {
+      "name": "بنك تجريبي",
+      "status": "ACTIVE"
+    }
+  ],
+  "borrowers": [
+    {
+      "name": "أحمد السلفة",
+      "status": "ACTIVE"
+    }
+  ],
+  "currencies": [
+    {
+      "active": false,
+      "base": false,
+      "code": "AED",
+      "name": "درهم إماراتي"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "CAD",
+      "name": "دولار كندي"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "CHF",
+      "name": "فرنك سويسري"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "CNY",
+      "name": "يوان صيني"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "EGP",
+      "name": "جنيه مصري"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "EUR",
+      "name": "يورو"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "GBP",
+      "name": "جنيه إسترليني"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "IQD",
+      "name": "دينار عراقي"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "JOD",
+      "name": "دينار أردني"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "KWD",
+      "name": "دينار كويتي"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "LBP",
+      "name": "ليرة لبنانية"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "QAR",
+      "name": "ريال قطري"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "SAR",
+      "name": "ريال سعودي"
+    },
+    {
+      "active": false,
+      "base": false,
+      "code": "TRY",
+      "name": "ليرة تركية"
+    },
+    {
+      "active": true,
+      "base": false,
+      "code": "SYP",
+      "name": "ليرة سورية"
+    },
+    {
+      "active": true,
+      "base": true,
+      "code": "USD",
+      "name": "دولار أمريكي"
+    }
+  ],
+  "ledgerAccounts": [
+    {
+      "code": "1110",
+      "hasChildren": false,
+      "name": "الخزنة",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1120",
+      "hasChildren": false,
+      "name": "شام كاش",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1130",
+      "hasChildren": false,
+      "name": "البنوك",
+      "statementLine": "CASH",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1150",
+      "hasChildren": false,
+      "name": "مركز عملات أجنبية",
+      "statementLine": "FX_POSITION",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1160",
+      "hasChildren": false,
+      "name": "وسيط تقييم العملات",
+      "statementLine": "FX_CLEARING",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "1200",
+      "hasChildren": false,
+      "name": "ذمم الزبائن",
+      "statementLine": "RECEIVABLES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1210",
+      "hasChildren": false,
+      "name": "مخصص الديون",
+      "statementLine": "ALLOWANCE",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1250",
+      "hasChildren": false,
+      "name": "سلف الموردين",
+      "statementLine": "SUPPLIER_ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1300",
+      "hasChildren": false,
+      "name": "عهد وسلف المستلفين",
+      "statementLine": "ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1400",
+      "hasChildren": false,
+      "name": "المخزون",
+      "statementLine": "INVENTORY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "1410",
+      "hasChildren": false,
+      "name": "مخصص هبوط المخزون",
+      "statementLine": "INVENTORY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "ASSET"
+    },
+    {
+      "code": "2100",
+      "hasChildren": false,
+      "name": "ذمم الموردين",
+      "statementLine": "PAYABLES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "2150",
+      "hasChildren": false,
+      "name": "سلف الزبائن",
+      "statementLine": "CUSTOMER_ADVANCES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "LIABILITY"
+    },
+    {
+      "code": "3100",
+      "hasChildren": false,
+      "name": "رأس المال",
+      "statementLine": "CAPITAL",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "3200",
+      "hasChildren": false,
+      "name": "أرباح محتجزة",
+      "statementLine": "RETAINED",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "3300",
+      "hasChildren": false,
+      "name": "أرصدة افتتاحية",
+      "statementLine": "OPENING_EQUITY",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EQUITY"
+    },
+    {
+      "code": "4100",
+      "hasChildren": false,
+      "name": "المبيعات",
+      "statementLine": "SALES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4200",
+      "hasChildren": false,
+      "name": "أرباح التصريف",
+      "statementLine": "FX_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4210",
+      "hasChildren": false,
+      "name": "أرباح الترجمة",
+      "statementLine": "FX_TRANSLATION_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4220",
+      "hasChildren": false,
+      "name": "فروقات الصرف المحققة",
+      "statementLine": "FX_GAIN",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4900",
+      "hasChildren": false,
+      "name": "إيرادات أخرى",
+      "statementLine": "OTHER_INCOME",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "4910",
+      "hasChildren": false,
+      "name": "فائض المخزون",
+      "statementLine": "OTHER_INCOME",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "INCOME"
+    },
+    {
+      "code": "5000",
+      "hasChildren": false,
+      "name": "المشتريات",
+      "statementLine": "PURCHASES",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5100",
+      "hasChildren": false,
+      "name": "تكلفة المبيعات",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5200",
+      "hasChildren": false,
+      "name": "مصروفات تشغيل",
+      "statementLine": "OPEX",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5300",
+      "hasChildren": false,
+      "name": "خسائر التصريف",
+      "statementLine": "FX_LOSS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5310",
+      "hasChildren": false,
+      "name": "خسائر الترجمة",
+      "statementLine": "FX_TRANSLATION_LOSS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5400",
+      "hasChildren": false,
+      "name": "هبوط قيمة المخزون",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    },
+    {
+      "code": "5410",
+      "hasChildren": false,
+      "name": "عجز المخزون",
+      "statementLine": "COGS",
+      "status": "ACTIVE",
+      "system": true,
+      "type": "EXPENSE"
+    }
+  ],
+  "ledgerEntries": [
+    {
+      "description": "رصيد افتتاحي OB-YYMMDD-001",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "USD",
+          "debit": "5000",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "3100",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "5000",
+          "currency": "USD",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 1,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OPENING",
+      "status": "POSTED",
+      "transactionDate": "2026-09-01"
+    },
+    {
+      "description": "رصيد افتتاحي OB-YYMMDD-002",
+      "employee": {
+        "name": "المدير العام"
+      },
+      "lines": [
+        {
+          "account": {
+            "code": "1110",
+            "name": "الخزنة",
+            "type": "ASSET"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "0",
+          "currency": "SYP",
+          "debit": "20000000",
+          "memo": "",
+          "project": null
+        },
+        {
+          "account": {
+            "code": "3100",
+            "name": "رأس المال",
+            "type": "EQUITY"
+          },
+          "costCenter": {
+            "kind": "LOCATION",
+            "name": "المكتب الأول"
+          },
+          "credit": "20000000",
+          "currency": "SYP",
+          "debit": "0",
+          "memo": "",
+          "project": null
+        }
+      ],
+      "number": 2,
+      "reversalOf": null,
+      "reversedBy": null,
+      "sourceType": "OPENING",
+      "status": "POSTED",
+      "transactionDate": "2026-09-01"
+    }
+  ],
+  "openingBalances": [
+    {
+      "amount": "20000000",
+      "currency": "SYP",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": "13000",
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 2,
+      "reference": "OB-YYMMDD-002",
+      "status": "COMPLETED",
+      "transactionDate": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "amount": "5000",
+      "currency": "USD",
+      "employee": {
+        "name": "موظف المكتب 1"
+      },
+      "fund": "VAULT",
+      "fxRate": null,
+      "location": {
+        "name": "المكتب الأول"
+      },
+      "notes": "",
+      "operationNumber": 1,
+      "reference": "OB-YYMMDD-001",
+      "status": "COMPLETED",
+      "transactionDate": "2026-09-01T00:00:00.000Z"
+    }
+  ],
+  "openingEntry": {
+    "functionalLocked": false,
+    "openingLocked": false,
+    "posted": false
+  },
+  "projects": [
+    {
+      "name": "مشروع عام",
+      "showIn": [
+        "INCOME",
+        "OUTCOME",
+        "LOANS",
+        "REPORTS"
+      ],
+      "status": "ACTIVE"
+    }
+  ],
+  "quote": {
+    "code": "SYP",
+    "date": "2026-09-15",
+    "effectiveDate": "2026-09-10",
+    "foreign": true,
+    "functional": "USD",
+    "label": "ليرة لكل دولار",
+    "rate": 13500
+  },
+  "rateHistory": [
+    {
+      "code": "SYP",
+      "date": "2026-09-01",
+      "label": "ليرة لكل دولار",
+      "rate": 13000
+    },
+    {
+      "code": "SYP",
+      "date": "2026-09-10",
+      "label": "ليرة لكل دولار",
+      "rate": 13500
+    },
+    {
+      "code": "SYP",
+      "date": "2026-09-20",
+      "label": "ليرة لكل دولار",
+      "rate": 14000
+    },
+    {
+      "code": "SYP",
+      "date": "2026-09-30",
+      "label": "ليرة لكل دولار",
+      "rate": 14500
+    }
+  ],
+  "rates": {
+    "date": "2026-09-30",
+    "functional": "USD",
+    "rows": [
+      {
+        "code": "SYP",
+        "effectiveDate": "2026-09-30",
+        "isExactDate": true,
+        "label": "ليرة لكل دولار",
+        "name": "ليرة سورية",
+        "rate": 14500,
+        "storedCode": "SYP"
+      }
+    ]
+  },
+  "seenBy": {
+    "employee1": {
+      "banks": [],
+      "custody": [],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 20000000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5000,
+          "currency": "USD"
+        }
+      ]
+    },
+    "monitor": {
+      "banks": [],
+      "custody": [],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 20000000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5000,
+          "currency": "USD"
+        }
+      ]
+    },
+    "supervisor1": {
+      "banks": [],
+      "custody": [],
+      "sham": [],
+      "vault": [
+        {
+          "amount": 20000000,
+          "currency": "SYP"
+        },
+        {
+          "amount": 5000,
+          "currency": "USD"
+        }
+      ]
+    },
+    "supervisor1Openings": [
+      {
+        "amount": "20000000",
+        "currency": "SYP",
+        "employee": {
+          "name": "موظف المكتب 1"
+        },
+        "fund": "VAULT",
+        "fxRate": "13000",
+        "location": {
+          "name": "المكتب الأول"
+        },
+        "notes": "",
+        "operationNumber": 2,
+        "reference": "OB-YYMMDD-002",
+        "status": "COMPLETED",
+        "transactionDate": "2026-09-01T00:00:00.000Z"
+      },
+      {
+        "amount": "5000",
+        "currency": "USD",
+        "employee": {
+          "name": "موظف المكتب 1"
+        },
+        "fund": "VAULT",
+        "fxRate": null,
+        "location": {
+          "name": "المكتب الأول"
+        },
+        "notes": "",
+        "operationNumber": 1,
+        "reference": "OB-YYMMDD-001",
+        "status": "COMPLETED",
+        "transactionDate": "2026-09-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "ok": true,
+      "step": "bank"
+    },
+    {
+      "ok": true,
+      "step": "borrower"
+    },
+    {
+      "ok": true,
+      "step": "opening balances"
+    },
+    {
+      "ok": true,
+      "step": "project"
+    },
+    {
+      "ok": true,
+      "step": "rates"
+    }
+  ]
+}

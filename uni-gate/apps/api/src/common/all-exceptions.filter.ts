@@ -38,11 +38,17 @@ function readBody(body: string | object, status: number): ErrorBody {
     const details = 'details' in body ? body.details : undefined;
     return details === undefined ? { code: body.code, message } : { code: body.code, message, details };
   }
+  // Finance errors carry their code as the message (for example BadRequestException('PERIOD_CLOSED')).
+  if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string' && FINANCE_CODE.test(body.message)) {
+    return { code: body.message, message: body.message };
+  }
   return {
     code: codeForStatus(status),
     message: 'Request failed',
   };
 }
+
+const FINANCE_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 
 function codeForStatus(status: number): string {
   if (status === HttpStatus.BAD_REQUEST) return ErrorCode.VALIDATION_ERROR;

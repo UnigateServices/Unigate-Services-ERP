@@ -8,6 +8,13 @@
 // Usage: node scenario.mjs <apiBase> <outFile>
 //   apiBase  e.g. http://localhost:3101/api (original finance app)
 //
+// Environment:
+//   SCENARIO_TARGET  original (default) or merged. Merged signs in with a company code, and finance
+//                    routes live under /finance. Only the sign-in and the paths change, never the steps.
+//   SCENARIO_BATCH   full (default) or a merge batch (f3a). A batch runs only the steps its routes cover
+//                    and records only what those routes compute. Its reference is baseline/<batch>.json,
+//                    recorded on the original app with the same batch.
+//
 // The database must be fresh: migrated and seeded, with no other operations.
 // All dates are fixed, so the output does not depend on the day it runs.
 
@@ -16,6 +23,21 @@ import { writeFileSync } from 'node:fs';
 const [, , API = 'http://localhost:3101/api', OUT = 'baseline.json'] = process.argv;
 const ORIGIN = process.env.SCENARIO_ORIGIN ?? 'http://localhost:3000';
 const PASSWORD = process.env.SCENARIO_PASSWORD ?? 'Tradivia@dev';
+const TARGET = process.env.SCENARIO_TARGET ?? 'original';
+const BATCH = process.env.SCENARIO_BATCH ?? 'full';
+const MERGED = TARGET === 'merged';
+/** Merged sign-in: the company code, and one login name per scenario user (display names stay the same). */
+const COMPANY_CODE = process.env.SCENARIO_COMPANY ?? 'scenario';
+if (!['original', 'merged'].includes(TARGET)) throw new Error(`unknown SCENARIO_TARGET ${TARGET}`);
+if (!['full', 'f3a'].includes(BATCH)) throw new Error(`unknown SCENARIO_BATCH ${BATCH}`);
+
+/** Foundation routes keep their path in the merged app. Everything else is a finance route. */
+function routeOf(path) {
+  if (!MERGED) return path;
+  if (path.startsWith('/locations')) return path;
+  if (path.startsWith('/employees')) return path.replace('/employees', '/finance/members');
+  return `/finance${path}`;
+}
 
 /** Login names from the finance seed. A later adapter maps these to foundation users. */
 const USERS = {
@@ -28,7 +50,7 @@ const USERS = {
 const cookies = {};
 
 async function call(who, method, path, body) {
-  const response = await fetch(`${API}${path}`, {
+  const response = await fetch(`${API}${routeOf(path)}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -48,7 +70,11 @@ async function login(who) {
   const response = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
-    body: JSON.stringify({ username: USERS[who], password: PASSWORD }),
+    body: JSON.stringify(
+      MERGED
+        ? { companyCode: COMPANY_CODE, username: who, password: PASSWORD }
+        : { username: USERS[who], password: PASSWORD },
+    ),
   });
   if (!response.ok) throw new Error(`login ${who} -> ${response.status}: ${await response.text()}`);
   const raw = response.headers.getSetCookie?.() ?? [];
@@ -98,14 +124,20 @@ async function main() {
   );
   const bank = await step('bank', () => call('manager', 'POST', '/banks', { name: 'بنك تجريبي' }));
   const borrower = await step('borrower', () => call('manager', 'POST', '/borrowers', { name: 'أحمد السلفة' }));
-  const customer = await step('customer', () =>
-    call('manager', 'POST', '/customers', { name: 'زبون تجريبي', paymentTermDays: 30 }),
-  );
-  const supplier = await step('supplier', () => call('manager', 'POST', '/suppliers', { name: 'مورد تجريبي' }));
-  const warehouse = await step('warehouse', () => call('manager', 'POST', '/warehouses', { name: 'المستودع الرئيسي' }));
-  const product = await step('product', () =>
-    call('manager', 'POST', '/products', { name: 'منتج أ', sku: 'P-A', unit: 'PIECE', costPrice: 50, salePrice: 80 }),
-  );
+  // Trade master data (F3c). A batch before F3c skips it.
+  const trade = BATCH === 'full';
+  const customer = trade
+    ? await step('customer', () => call('manager', 'POST', '/customers', { name: 'زبون تجريبي', paymentTermDays: 30 }))
+    : null;
+  const supplier = trade ? await step('supplier', () => call('manager', 'POST', '/suppliers', { name: 'مورد تجريبي' })) : null;
+  const warehouse = trade
+    ? await step('warehouse', () => call('manager', 'POST', '/warehouses', { name: 'المستودع الرئيسي' }))
+    : null;
+  const product = trade
+    ? await step('product', () =>
+        call('manager', 'POST', '/products', { name: 'منتج أ', sku: 'P-A', unit: 'PIECE', costPrice: 50, salePrice: 80 }),
+      )
+    : null;
 
   // Opening cash per office employee (custody), then daily operations.
   const office1 = byName(USERS.employee1);
@@ -117,6 +149,36 @@ async function main() {
       transactionDate: '2026-09-01', employeeId: office1.id, fund: 'VAULT', currency: 'SYP', amount: 20000000,
     });
   });
+
+  if (BATCH === 'f3a') {
+    // F3a covers policy, master data, the ledger, opening balances, balances, and approvals.
+    // Approvals need operations (F3b), so this batch records an empty history.
+    const snapshot = {
+      steps,
+      currencies: await call('manager', 'GET', '/company-policy/currencies'),
+      rates: await call('manager', 'GET', '/company-policy/rates?date=2026-09-30'),
+      rateHistory: await call('manager', 'GET', '/company-policy/rates/history?code=SYP'),
+      quote: await call('employee1', 'GET', '/company-policy/rates/quote?code=SYP&date=2026-09-15'),
+      projects: await call('manager', 'GET', '/projects'),
+      banks: await call('manager', 'GET', '/banks'),
+      borrowers: await call('manager', 'GET', '/borrowers'),
+      openingBalances: await call('manager', 'GET', '/opening-balances'),
+      balances: await call('manager', 'GET', '/balances'),
+      ledgerEntries: await call('manager', 'GET', '/ledger/entries'),
+      ledgerAccounts: await call('manager', 'GET', '/ledger/accounts'),
+      openingEntry: await call('manager', 'GET', '/opening-entry'),
+      approvals: await call('manager', 'GET', '/audit/requests/history'),
+      seenBy: {
+        monitor: await call('monitor', 'GET', '/balances'),
+        supervisor1: await call('supervisor1', 'GET', '/balances'),
+        employee1: await call('employee1', 'GET', '/balances'),
+        supervisor1Openings: await call('supervisor1', 'GET', '/opening-balances'),
+      },
+    };
+    writeFileSync(OUT, JSON.stringify(normalize(snapshot), null, 2) + '\n');
+    console.log(`OK: ${steps.length} steps (batch ${BATCH}), written to ${OUT}`);
+    return;
+  }
 
   // Operations by the general manager name the office explicitly: office 1, the employee's office.
   const locations = itemsOf(await call('manager', 'GET', '/locations'));
