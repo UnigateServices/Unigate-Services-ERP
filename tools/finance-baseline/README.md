@@ -40,7 +40,24 @@ git diff --no-index tools/finance-baseline/baseline/original.json run.json
 
 ## الاختبارات الموجودة في المالية
 
-الملفات الخمسة `*.spec.ts` في `Reference/erp-finance/apps/api/src/finance/` تعمل بـ `npx tsx <الملف>`. الخمسة ناجحة على النسخة الأصلية، بشرط أن يكون الـ API قد عمل مرة واحدة على القاعدة (اختبار المطابقة يحتاج دليل الحسابات الذي ينشئه الـ API).
+الملفات الخمسة `*.spec.ts` في `Reference/erp-finance/apps/api/src/finance/` تعمل بـ `npx tsx <الملف>`. الثلاثة التي انتقلت في F3a صارت `*.check.ts` في `uni-gate/apps/api/src/finance/` وتعمل ضمن `npm run test:api`. الخمسة ناجحة على النسخة الأصلية، بشرط أن يكون الـ API قد عمل مرة واحدة على القاعدة (اختبار المطابقة يحتاج دليل الحسابات الذي ينشئه الـ API).
+
+## التشغيل على الـ API المدموج (من F3a)
+
+- `baseline/f3a.json`: أرقام الدفعة F3a فقط (العملات والأسعار، والمشاريع والبنوك وأصحاب السلف، والأرصدة الافتتاحية، والأرصدة، والقيود ودليل الحسابات، والقيد الافتتاحي، والموافقات، وما يراه المراقب والمشرف والموظف). سُجّلت من التطبيق الأصلي بـ `SCENARIO_BATCH=f3a`.
+- متغيرات السيناريو: `SCENARIO_TARGET` (`original` أو `merged`)، و`SCENARIO_BATCH` (`full` أو `f3a`)، و`SCENARIO_COMPANY` (رمز الشركة في المدموج، الافتراضي `scenario`)، و`SCENARIO_PASSWORD`، و`SCENARIO_ORIGIN`.
+- في المدموج، تسجيل الدخول برمز الشركة واسم المستخدم (`manager`، `monitor`، `supervisor1`، `employee1`...)، ومسارات المالية تحت `/api/finance`، و`/employees` صارت `/finance/members`.
+
+```powershell
+# قاعدة uni-gate جديدة، ثم شركة السيناريو (من uni-gate/apps/api)
+$env:SCENARIO_PASSWORD="..."; npx tsx scripts/seed-finance-scenario.ts
+npm run dev:api
+
+# من جذر المستودع
+$env:SCENARIO_TARGET="merged"; $env:SCENARIO_BATCH="f3a"
+node tools/finance-baseline/scenario.mjs http://localhost:3001/api run.json
+git diff --no-index tools/finance-baseline/baseline/f3a.json run.json
+```
 
 ## في المراحل القادمة
 

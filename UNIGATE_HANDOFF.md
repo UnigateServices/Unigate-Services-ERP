@@ -26,11 +26,13 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Accepted and merged:** phase F0 (finance safety net), pull request #10.
 
-**Implemented, waiting for acceptance:** phase F2 (finance tables in the foundation database), on branch `phase-f2-finance-schema`. See "Phase F2" below.
+**Accepted and merged:** phase F2 (finance tables in the foundation database), pull request #11. See "Phase F2" below.
+
+**Implemented, waiting for acceptance:** phase F3a (finance foundation API), on branch `claude/project-thread-qq12zk`. See "Phase F3a" below.
 
 **F0 details:** `tools/finance-baseline/scenario.mjs` runs a fixed set of finance operations and records every computed number; `tools/finance-baseline/baseline/original.json` holds the original app's numbers. Every F3 batch must reproduce them. Accounting observations for the manager are in `docs/FINANCE_REVIEW_NOTES.md`; do not change finance behavior during the merge.
 
-**Approved, not started:** phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
+**Approved, not started:** batches F3b to F3d and phases F4 and F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
 
 **Not built:** finance, exchange, gold, aviation, engineering, and HR business logic.
 
@@ -235,7 +237,7 @@ Migrations, in order:
 4. `20261023090000_role_permissions` (phase F1)
 5. `20261024100000_finance_schema` (phase F2)
 
-No finance tables. After the Phase 2 cleanup, local `unigate` held only the development seed: companies `tradivia`, `ofoq`, `expired`, and `lastday`, plus their roles, locations, and users. Re-run `npm run db:seed:dev` on a later calendar day so `lastday` stays that day and `expired` stays the day before.
+Before phase F2 there were no finance tables. After the Phase 2 cleanup, local `unigate` held only the development seed: companies `tradivia`, `ofoq`, `expired`, and `lastday`, plus their roles, locations, and users. Re-run `npm run db:seed:dev` on a later calendar day so `lastday` stays that day and `expired` stays the day before.
 
 `authVersion` increments when the user changes their own password, when an administrator resets it, and when the user is deactivated. It does not increment when a role changes. A signed session must carry the current value. Older versions are rejected. Role and permission checks read the current `Role` row.
 
@@ -435,6 +437,25 @@ Notes for F3 (moving the finance code):
 4. `employee` relations now return a `Membership`; the display name is `membership.user.name`. API responses must keep their old shape (`{ name }`) so the F0 scenario matches.
 5. `JournalEntry.sourceKey` is unique per company (`@@unique([companyId, sourceKey])`), not globally: year-close keys (`YEAR_CLOSE:<year>`) repeat across companies. Lookups by `sourceKey` (`post-source.ts`, `statements.service.ts`) must use `companyId_sourceKey`.
 
+## Phase F3a: finance foundation API (24 October 2026)
+
+The first finance batch moved from `Reference/erp-finance/apps/api/src/finance` into `uni-gate/apps/api/src/finance`, with the five conversions of `docs/FINANCE_MERGE_PLAN.md` section 4. It covers policy, currencies and rates; projects, banks, and borrowers; ledger and chart of accounts; opening balances and the opening entry; balances; approvals; notifications; and attachments.
+
+- Routes: `/api/finance/{company-policy, projects, banks, borrowers, members, ledger, opening-balances, opening-entry, balances, audit/requests, notifications, attachments}`. Every controller uses `FinanceRoute` (`finance/finance-route.ts`): signed in, and the `finance` module enabled for the session company (403 `FORBIDDEN` otherwise).
+- Company: services take a `FinanceActor` (`finance/finance-access.ts`, from `requireAccess(auth, 'finance', level)`) or its `companyId`. No `COMPANY_ID` config, no company from the browser. Every lookup by id filters by company; updates and deletes use `companyId_id`; journal `sourceKey` lookups use `companyId_sourceKey`.
+- Levels replace role names. The mapping is in the comment at the top of `finance-access.ts`: every GET is READ; writes that general manager and supervisor could do need APPROVE; general-manager-only actions (currency settings, opening entry, opening-balance override) need ADMIN; recorder writes (approval requests, attachments) need WRITE. Visibility replaces offices: ALL_BRANCHES sees every office, BRANCH its own, OWN its own records.
+- Platform support gets READ with ALL_BRANCHES: it can read every finance route and every write is 403 `FORBIDDEN` (it has no membership).
+- Approvals (decision B): a request is refused with `USE_DIRECT_ACTION` when the role's flag (`editRequiresApproval` for UPDATE, `deleteRequiresApproval` for DELETE) is off. Deciding needs APPROVE; nobody decides their own request; a non-ADMIN approver needs a level above the requester's. A WRITE request notifies APPROVE members of that branch and ALL_BRANCHES approvers; an APPROVE request notifies ADMIN members.
+- People (decision A, F3 note 4): `GET /api/finance/members` replaces the original `/employees`. Responses flatten `membership.user.name` back to `{ id, name }` (`finance/people.ts`).
+- Attachments are stored under `UPLOAD_DIR/<companyId>/<reference>` (decision I). `UPLOAD_DIR` defaults to `./uploads`. New dependency: `multer` (and `@types/multer`).
+- Errors: a finance error code (`BadRequestException('PROJECT_NOT_FOUND')`) is returned as `{ code, message }` by the global filter.
+- F3 notes addressed: 1, office cost centers are created on demand from the foundation locations (`syncCostCenters`); 2, project delete also counts its cost center and journal lines, bank delete counts advances, and a used record is deactivated; 3, opening line creates pass `companyId`; 4, as above; 5, as above. The customer and quote parts of note 2 belong to F3c.
+- Deviations caused by the levels model, numbers unchanged: an employee (WRITE) can read rates and their own opening balances; approval needs the role flag on instead of a role name; a project with a cost center is deactivated instead of deleted.
+- Kept as in the original, not fixed: the opening-entry custody memo is the literal text `عهدة افتتاحية - ${borrowerName}` (not a template string). Report it with the other observations in `docs/FINANCE_REVIEW_NOTES.md` when the manager reviews them.
+- Baseline: `tools/finance-baseline/scenario.mjs` takes `SCENARIO_TARGET=merged` and `SCENARIO_BATCH=f3a`. `baseline/f3a.json` was recorded from the original app; the merged API reproduces it exactly. `apps/api/scripts/seed-finance-scenario.ts` creates the matching dev company (`scenario`). See `tools/finance-baseline/README.md`.
+- The original checks `fx-journal`, `inventory-nrv`, and `custody-book` are now `*.check.ts` and run from `finance/original-checks.spec.ts`.
+- Checks: `tsc` API, `nest build`, `next build` OK; `npm run test:api` 17 suites, 99 tests (10 new in `finance-foundation.spec.ts`: module flag, levels, two-company isolation, read-only support, approvals, delete guards and cost centers, attachments; 3 original checks).
+
 ## Working method
 
 From 22 October 2026: Claude plans and writes the phase specification. Claude Code builds it. Cursor is no longer used. A separate Claude Code reviewer, who did not build the phase, reviews the branch. The user tests manually before every merge. For each phase, give the user a plain Arabic explanation of what was done, plus manual test steps with the expected result.
@@ -451,7 +472,7 @@ The test time varied (95 s to 354 s) because `jest.setup.ts` was a `setupFiles` 
 
 Still open:
 
-1. `ModulesModule` does not export `ModulesService` or `ModuleAccessGuard`. Add exports when the first real module (finance) needs the guard.
+1. Resolved in phase F3a: `ModulesModule` exports `ModulesService` and `ModuleAccessGuard`.
 2. `GET /api/modules/:key` checks enabled twice (guard and service). Harmless.
 3. The editor reports three TypeScript deprecation diagnostics in `uni-gate/apps/api/tsconfig.json` (`moduleResolution` node10, `rootDir`, `baseUrl`). They come from the editor's newer TypeScript; the project builds under 5.9.x. Do not upgrade TypeScript or add `ignoreDeprecations` during the foundation.
 4. Audit entries record no old or new values. The actor name is read live from `User.name`, not stored on the audit row.
@@ -462,7 +483,7 @@ Still open:
 ## 12. Exact next action for the next Agent
 
 1. Read this file and `git status`. Do not discard the tree.
-2. The next work is phase F1 in `docs/FINANCE_MERGE_PLAN.md` section 5, then foundation Phase 11. The decisions in section 3 of that plan are approved and binding.
+2. Phase F3a waits for the user's manual acceptance. After it is merged, the next work is batch F3b (daily operations) in `docs/FINANCE_MERGE_PLAN.md` section 5, only when the user says so. The decisions in section 3 of that plan are approved and binding.
 3. Do not write code for a later phase, a write route to the audit list, or a customer-facing audit before the user asks. The user chooses the scope.
 4. Keep customer company identity on the server session. Do not trust a company id from the browser.
 5. Support context is already `actingCompanyId` in `ug_access`. Do not put it back in `localStorage`.
@@ -486,7 +507,7 @@ Local database: PostgreSQL on `localhost:5433`, database `unigate`. Start comman
 - Do not create a customer user inside company bootstrap unless the user asks for that.
 - Do not let a member create or edit a role or a branch before Phase 11.
 - Do not increment `authVersion` when only role permissions change.
-- Do not implement finance approval from `editRequiresApproval` or `deleteRequiresApproval` before phase F3. Nobody approves their own request.
+- Finance approval follows `editRequiresApproval` and `deleteRequiresApproval` (phase F3a). Nobody approves their own request.
 - Do not treat an inactive location as a login block unless the user asks for that rule.
 - Do not make branch names case-insensitive unless the user changes that rule.
 - Do not treat `ug_support_company` as support authority.
