@@ -148,12 +148,60 @@ model Company {
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")
 
-  locations   Location[]
-  roles       Role[]
-  memberships Membership[]
-  modules     CompanyModule[]
-  auditEntries AuditEntry[]
+  locations       Location[]
+  roles           Role[]
+  memberships     Membership[]
+  modules         CompanyModule[]
+  auditEntries    AuditEntry[]
   rolePermissions RolePermission[]
+
+  // Finance (phase F2)
+  borrowers                Borrower[]
+  projects                 Project[]
+  banks                    Bank[]
+  incomes                  Income[]
+  outcomes                 Outcome[]
+  exchanges                Exchange[]
+  transfers                Transfer[]
+  advances                 Advance[]
+  openingBalances          OpeningBalance[]
+  auditTrails              AuditTrail[]
+  notifications            Notification[]
+  warehouses               Warehouse[]
+  products                 Product[]
+  stockMovements           StockMovement[]
+  customers                Customer[]
+  salesInvoices            SalesInvoice[]
+  salesInvoiceLines        SalesInvoiceLine[]
+  inventoryAssessments     InventoryAssessment[]
+  inventoryAssessmentLines InventoryAssessmentLine[]
+  salesInvoicePayments     SalesInvoicePayment[]
+  suppliers                Supplier[]
+  purchaseInvoices         PurchaseInvoice[]
+  purchaseInvoiceLines     PurchaseInvoiceLine[]
+  accounts                 Account[]
+  journalEntries           JournalEntry[]
+  journalLines             JournalLine[]
+  costCenters              CostCenter[]
+  purchaseInvoicePayments  PurchaseInvoicePayment[]
+  accountingPolicies       AccountingPolicy[]
+  fxRevaluations           FxRevaluation[]
+  fiscalYears              FiscalYear[]
+  fiscalPeriods            FiscalPeriod[]
+  budgets                  Budget[]
+  budgetLines              BudgetLine[]
+  companyCurrencies        CompanyCurrency[]
+  dailyRates               DailyRate[]
+  openItems                OpenItem[]
+  openItemAllocations      OpenItemAllocation[]
+  openingEntries           OpeningEntry[]
+  openingAccountLines      OpeningAccountLine[]
+  openingStockLines        OpeningStockLine[]
+  leads                    Lead[]
+  opportunities            Opportunity[]
+  activities               Activity[]
+  quotes                   Quote[]
+  quoteLines               QuoteLine[]
 
   @@map("companies")
 }
@@ -168,6 +216,22 @@ model Location {
 
   company     Company      @relation(fields: [companyId], references: [id])
   memberships Membership[]
+
+  // Finance (phase F2)
+  incomes              Income[]
+  outcomes             Outcome[]
+  exchanges            Exchange[]
+  transfers            Transfer[]
+  advances             Advance[]
+  openingBalances      OpeningBalance[]
+  auditTrail           AuditTrail[]
+  notifications        Notification[]
+  salesInvoices        SalesInvoice[]
+  purchaseInvoices     PurchaseInvoice[]
+  journalEntries       JournalEntry[]
+  inventoryAssessments InventoryAssessment[]
+  costCenter           CostCenter?
+  openItems            OpenItem[]
 
   @@unique([companyId, name])
   @@unique([companyId, id])
@@ -211,6 +275,33 @@ model Membership {
   company  Company   @relation(fields: [companyId], references: [id])
   role     Role      @relation(fields: [companyId, roleId], references: [companyId, id])
   location Location? @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  // Finance (phase F2)
+  incomes                Income[]
+  outcomes               Outcome[]
+  exchanges              Exchange[]
+  transfers              Transfer[]
+  advances               Advance[]
+  openingBalances        OpeningBalance[]
+  salesInvoices          SalesInvoice[]
+  voidedInvoices         SalesInvoice[]           @relation("InvoiceVoidedBy")
+  inventoryAssessments   InventoryAssessment[]
+  salesPayments          SalesInvoicePayment[]
+  purchaseInvoices       PurchaseInvoice[]
+  voidedPurchases        PurchaseInvoice[]        @relation("PurchaseVoidedBy")
+  purchasePayments       PurchaseInvoicePayment[]
+  auditRequests          AuditTrail[]             @relation("AuditRequester")
+  auditDecisions         AuditTrail[]             @relation("AuditSupervisor")
+  notifications          Notification[]           @relation("NotificationEmployee")
+  requestedNotifications Notification[]           @relation("NotificationRequester")
+  stockMovements         StockMovement[]
+  journalEntries         JournalEntry[]
+  ownedLeads             Lead[]                   @relation("LeadOwner")
+  ownedOpportunities     Opportunity[]            @relation("OpportunityOwner")
+  ownedActivities        Activity[]               @relation("ActivityOwner")
+  quotes                 Quote[]
+  openingEntries         OpeningEntry[]
+  openItems              OpenItem[]
 
   @@unique([companyId, username])
   @@unique([companyId, id])
@@ -269,4 +360,1553 @@ model AuditEntry {
   @@index([companyId, createdAt])
   @@index([actorUserId])
   @@map("audit_entries")
+}
+
+// ===== Finance module (phase F2) =====
+// Generated from Reference/erp-finance (77ce653) by tools/finance-schema/transform.py, then owned here.
+// - Every table has company_id, a foreign key to companies, and a unique (company_id, id).
+// - Every relation is composite (company_id, x_id) -> (company_id, id): no row can point at another company.
+// - employee_id, requester_id, supervisor_id, voided_by_id, and owner_id reference memberships (decision A).
+// - location_id references the foundation locations table.
+// - Hand-written rules Prisma does not model are in migration 20261024100000_finance_schema:
+//   the partial unique index on product barcodes and the journal_lines_center_guard trigger.
+
+enum Currency {
+  USD
+  SYP
+  EUR
+  GBP
+  TRY
+  AED
+  SAR
+  JOD
+  LBP
+  IQD
+  EGP
+  QAR
+  KWD
+  CHF
+  CAD
+  CNY
+}
+
+/// Cash funds only: الخزائن، المحافظ الرقمية، البنوك.
+/// Borrower custody is a receivable sub-ledger under account 1300 (see OpenItemKind.CUSTODY), never a fund.
+enum FundType {
+  VAULT
+  SHAM_CASH
+  BANK
+}
+
+enum TransactionStatus {
+  COMPLETED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  DELETED
+}
+
+enum ExchangeType {
+  BUY
+  SELL
+}
+
+/// ISSUE: صرف عهدة من صندوق (Dr 1300 / Cr صندوق). RETURN: استرداد عهدة إلى صندوق.
+/// OUTCOME: صادر من رصيد المستلف. EXCHANGE: تصريف عملة داخل الرصيد.
+enum AdvanceType {
+  OUTCOME
+  EXCHANGE
+  ISSUE
+  RETURN
+}
+
+enum AuditActionType {
+  UPDATE
+  DELETE
+}
+
+enum AuditRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DIRECT
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+model Borrower {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  advances  Advance[]
+  openItems OpenItem[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("borrowers")
+}
+
+model Project {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  /// Places the project appears: INCOME | OUTCOME | LOANS | REPORTS
+  showIn    String[]     @default([]) @map("show_in")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  incomes      Income[]
+  outcomes     Outcome[]
+  advances     Advance[]
+  costCenter   CostCenter?
+  journalLines JournalLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("projects")
+}
+
+model Bank {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  incomes         Income[]
+  outcomes        Outcome[]
+  exchanges       Exchange[]
+  transfersFrom   Transfer[]       @relation("TransferFromBank")
+  transfersTo     Transfer[]       @relation("TransferToBank")
+  advances        Advance[]
+  openingBalances OpeningBalance[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("banks")
+}
+
+model Income {
+  id              String            @id @default(cuid())
+  companyId       String            @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  sender          String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  total           Decimal           @db.Decimal(18, 4)
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  project      Project?             @relation(fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict)
+  bank         Bank?                @relation(fields: [companyId, bankId], references: [companyId, id], onDelete: Restrict)
+  employee     Membership           @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location     Location?            @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  salesPayment SalesInvoicePayment?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([projectId])
+  @@index([locationId])
+  @@map("incomes")
+}
+
+model Outcome {
+  id              String            @id @default(cuid())
+  companyId       String            @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  deliverer       String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  total           Decimal           @db.Decimal(18, 4)
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  project         Project?                @relation(fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict)
+  bank            Bank?                   @relation(fields: [companyId, bankId], references: [companyId, id], onDelete: Restrict)
+  employee        Membership              @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location        Location?               @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  purchasePayment PurchaseInvoicePayment?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([projectId])
+  @@index([locationId])
+  @@map("outcomes")
+}
+
+model Exchange {
+  id               String            @id @default(cuid())
+  companyId        String            @map("company_id")
+  operationNumber  Int               @map("operation_number")
+  transactionDate  DateTime          @map("transaction_date") @db.Date
+  systemDate       DateTime          @default(now()) @map("system_date")
+  fund             FundType
+  bankId           String?           @map("bank_id")
+  exchangeType     ExchangeType      @map("exchange_type")
+  paidCurrency     Currency          @map("paid_currency")
+  receivedCurrency Currency          @map("received_currency")
+  exchangeAmount   Decimal           @map("exchange_amount") @db.Decimal(18, 4)
+  amountCurrency   Currency          @map("amount_currency")
+  exchangeRate     Decimal           @map("exchange_rate") @db.Decimal(18, 6)
+  total            Decimal           @db.Decimal(18, 4)
+  attachments      String            @default("")
+  notes            String            @default("")
+  employeeId       String            @map("employee_id")
+  locationId       String?           @map("location_id")
+  status           TransactionStatus @default(COMPLETED)
+  reference        String
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  deletedAt        DateTime?         @map("deleted_at")
+
+  bank     Bank?      @relation(fields: [companyId, bankId], references: [companyId, id], onDelete: Restrict)
+  employee Membership @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location Location?  @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("exchanges")
+}
+
+model Transfer {
+  id              String            @id @default(cuid())
+  companyId       String            @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  fromFund        FundType          @map("from_fund")
+  toFund          FundType          @map("to_fund")
+  fromBankId      String?           @map("from_bank_id")
+  toBankId        String?           @map("to_bank_id")
+  currency        Currency
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  amount          Decimal           @db.Decimal(18, 4)
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  fromBank Bank?      @relation("TransferFromBank", fields: [companyId, fromBankId], references: [companyId, id], onDelete: Restrict)
+  toBank   Bank?      @relation("TransferToBank", fields: [companyId, toBankId], references: [companyId, id], onDelete: Restrict)
+  employee Membership @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location Location?  @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("transfers")
+}
+
+model Advance {
+  id              String            @id @default(cuid())
+  companyId       String            @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  borrowerId      String            @map("borrower_id")
+  advanceType     AdvanceType       @map("advance_type")
+  projectId       String?           @map("project_id")
+  description     String            @default("")
+  receiver        String            @default("")
+  currency        Currency
+  quantity        Decimal?          @db.Decimal(18, 4)
+  amount          Decimal           @db.Decimal(18, 4)
+  exchangeRate    Decimal?          @map("exchange_rate") @db.Decimal(18, 6)
+  total           Decimal           @db.Decimal(18, 4)
+  fromCurrency    Currency?         @map("from_currency")
+  toCurrency      Currency?         @map("to_currency")
+  /// Cash side of an ISSUE or RETURN voucher. Null for OUTCOME and EXCHANGE (they never touch a fund).
+  fund            FundType?
+  bankId          String?           @map("bank_id")
+  attachments     String            @default("")
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  bank     Bank?      @relation(fields: [companyId, bankId], references: [companyId, id], onDelete: Restrict)
+  borrower Borrower   @relation(fields: [companyId, borrowerId], references: [companyId, id])
+  project  Project?   @relation(fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict)
+  employee Membership @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location Location?  @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([companyId, status])
+  @@index([employeeId])
+  @@index([borrowerId])
+  @@index([locationId])
+  @@map("advances")
+}
+
+model OpeningBalance {
+  id              String            @id @default(cuid())
+  companyId       String            @map("company_id")
+  operationNumber Int               @map("operation_number")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  systemDate      DateTime          @default(now()) @map("system_date")
+  fund            FundType
+  bankId          String?           @map("bank_id")
+  currency        Currency
+  fxRate          Decimal?          @map("fx_rate") @db.Decimal(18, 6)
+  amount          Decimal           @db.Decimal(18, 4)
+  notes           String            @default("")
+  employeeId      String            @map("employee_id")
+  locationId      String?           @map("location_id")
+  status          TransactionStatus @default(COMPLETED)
+  reference       String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  bank     Bank?      @relation(fields: [companyId, bankId], references: [companyId, id], onDelete: Restrict)
+  employee Membership @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location Location?  @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, fund, currency])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("opening_balances")
+}
+
+model AuditTrail {
+  id                 String             @id @default(cuid())
+  companyId          String             @map("company_id")
+  originalReference  String             @map("original_reference")
+  requesterId        String             @map("requester_id")
+  actionType         AuditActionType    @map("action_type")
+  oldDetails         Json               @map("old_details")
+  newDetails         Json               @map("new_details")
+  requestedAt        DateTime           @default(now()) @map("requested_at")
+  requestStatus      AuditRequestStatus @default(PENDING) @map("request_status")
+  supervisorId       String?            @map("supervisor_id")
+  supervisorDecision String             @default("") @map("supervisor_decision")
+  reason             String             @default("")
+  locationId         String?            @map("location_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  requester  Membership  @relation("AuditRequester", fields: [companyId, requesterId], references: [companyId, id])
+  supervisor Membership? @relation("AuditSupervisor", fields: [companyId, supervisorId], references: [companyId, id], onDelete: Restrict)
+  location   Location?   @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, requestStatus])
+  @@index([originalReference])
+  @@index([requesterId])
+  @@index([locationId])
+  @@map("audit_trail")
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  companyId   String             @map("company_id")
+  employeeId  String             @map("employee_id")
+  message     String
+  occurredAt  DateTime           @default(now()) @map("occurred_at")
+  status      NotificationStatus @default(UNREAD)
+  section     String             @default("")
+  requestId   String             @default("") @map("request_id")
+  actionType  String             @default("") @map("action_type")
+  reference   String             @default("")
+  requesterId String?            @map("requester_id")
+  locationId  String?            @map("location_id")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  employee  Membership  @relation("NotificationEmployee", fields: [companyId, employeeId], references: [companyId, id])
+  requester Membership? @relation("NotificationRequester", fields: [companyId, requesterId], references: [companyId, id], onDelete: Restrict)
+  location  Location?   @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, employeeId, status])
+  @@index([reference])
+  @@index([locationId])
+  @@map("notifications")
+}
+
+enum ProductUnit {
+  PIECE
+  KG
+  METER
+  LITER
+  BOX
+  SET
+}
+
+enum StockMoveType {
+  IN
+  OUT
+  ADJUST
+}
+
+enum StockSourceType {
+  MANUAL
+  SALES_ISSUE
+  SALES_RETURN
+  PURCHASE_RECEIPT
+  PURCHASE_RETURN
+  OPENING
+}
+
+enum SalesInvoiceStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+enum DiscountMode {
+  AMOUNT
+  PERCENT
+}
+
+enum SalesPaymentStatus {
+  POSTED
+  REVERSED
+}
+
+model Warehouse {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  isDefault Boolean      @default(false) @map("is_default")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  movements        StockMovement[]
+  salesInvoices    SalesInvoice[]
+  purchaseInvoices PurchaseInvoice[]
+  openingStock     OpeningStockLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+model Product {
+  id                 String       @id @default(cuid())
+  companyId          String       @map("company_id")
+  name               String
+  sku                String
+  barcode            String       @default("")
+  unit               ProductUnit  @default(PIECE)
+  costPrice          Decimal?     @map("cost_price") @db.Decimal(18, 4)
+  salePrice          Decimal?     @map("sale_price") @db.Decimal(18, 4)
+  unitNrv            Decimal?     @map("unit_nrv") @db.Decimal(18, 4)
+  nrvCurrency        Currency?    @map("nrv_currency")
+  inventoryAllowance Decimal      @default(0) @map("inventory_allowance") @db.Decimal(18, 4)
+  minQuantity        Decimal      @default(0) @map("min_quantity") @db.Decimal(18, 4)
+  imagePath          String       @default("") @map("image_path")
+  imageMime          String       @default("") @map("image_mime")
+  notes              String       @default("")
+  status             RecordStatus @default(ACTIVE)
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  movements     StockMovement[]
+  salesLines    SalesInvoiceLine[]
+  purchaseLines PurchaseInvoiceLine[]
+  nrvLines      InventoryAssessmentLine[]
+  quoteLines    QuoteLine[]
+  openingStock  OpeningStockLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, sku])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@map("products")
+}
+
+/// Quantity is the signed stock effect: IN positive, OUT negative, ADJUST is the delta to the counted quantity.
+model StockMovement {
+  id           String          @id @default(cuid())
+  companyId    String          @map("company_id")
+  reference    String
+  productId    String          @map("product_id")
+  warehouseId  String          @map("warehouse_id")
+  moveType     StockMoveType   @map("move_type")
+  quantity     Decimal         @db.Decimal(18, 4)
+  notes        String          @default("")
+  sourceType   StockSourceType @default(MANUAL) @map("source_type")
+  sourceId     String          @default("") @map("source_id")
+  sourceLineId String          @default("") @map("source_line_id")
+  employeeId   String          @map("employee_id")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  product   Product    @relation(fields: [companyId, productId], references: [companyId, id])
+  warehouse Warehouse  @relation(fields: [companyId, warehouseId], references: [companyId, id])
+  employee  Membership @relation(fields: [companyId, employeeId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, warehouseId, productId])
+  @@index([productId])
+  @@index([employeeId])
+  @@index([createdAt])
+  @@index([companyId, sourceId])
+  @@map("stock_movements")
+}
+
+model Customer {
+  id              String       @id @default(cuid())
+  companyId       String       @map("company_id")
+  name            String
+  phone           String       @default("")
+  email           String       @default("")
+  city            String       @default("")
+  address         String       @default("")
+  taxNumber       String       @default("") @map("tax_number")
+  paymentTermDays Int          @default(0) @map("payment_term_days")
+  notes           String       @default("")
+  status          RecordStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  invoices      SalesInvoice[]
+  openItems     OpenItem[]
+  leads         Lead[]
+  opportunities Opportunity[]
+  activities    Activity[]
+  quotes        Quote[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@map("customers")
+}
+
+/// Commercial sale. Stock moves only when POSTED. Cash is a separate payment that creates an income.
+model SalesInvoice {
+  id                String             @id @default(cuid())
+  companyId         String             @map("company_id")
+  number            Int
+  reference         String
+  transactionDate   DateTime           @map("transaction_date") @db.Date
+  customerId        String             @map("customer_id")
+  customerName      String             @map("customer_name")
+  warehouseId       String             @map("warehouse_id")
+  warehouseName     String             @map("warehouse_name")
+  currency          Currency
+  fxRate            Decimal?           @map("fx_rate") @db.Decimal(18, 6)
+  dueDate           DateTime?          @map("due_date") @db.Date
+  customerReference String             @default("") @map("customer_reference")
+  notes             String             @default("")
+  discountMode      DiscountMode       @default(AMOUNT) @map("discount_mode")
+  discountRate      Decimal            @default(0) @map("discount_rate") @db.Decimal(18, 4)
+  discount          Decimal            @default(0) @db.Decimal(18, 4)
+  subtotal          Decimal            @default(0) @db.Decimal(18, 4)
+  total             Decimal            @default(0) @db.Decimal(18, 4)
+  status            SalesInvoiceStatus @default(DRAFT)
+  employeeId        String             @map("employee_id")
+  locationId        String?            @map("location_id")
+  postedAt          DateTime?          @map("posted_at")
+  voidedAt          DateTime?          @map("voided_at")
+  voidReason        String             @default("") @map("void_reason")
+  voidedById        String?            @map("voided_by_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  customer  Customer              @relation(fields: [companyId, customerId], references: [companyId, id])
+  warehouse Warehouse             @relation(fields: [companyId, warehouseId], references: [companyId, id])
+  employee  Membership            @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location  Location?             @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  voidedBy  Membership?           @relation("InvoiceVoidedBy", fields: [companyId, voidedById], references: [companyId, id], onDelete: Restrict)
+  lines     SalesInvoiceLine[]
+  payments  SalesInvoicePayment[]
+  quote     Quote?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, number])
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, status, transactionDate])
+  @@index([customerId])
+  @@index([warehouseId])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id           String       @id @default(cuid())
+  companyId    String       @map("company_id")
+  invoiceId    String       @map("invoice_id")
+  productId    String       @map("product_id")
+  productName  String       @map("product_name")
+  sku          String       @default("")
+  unit         ProductUnit
+  quantity     Decimal      @db.Decimal(18, 4)
+  unitPrice    Decimal      @map("unit_price") @db.Decimal(18, 4)
+  discountMode DiscountMode @default(AMOUNT) @map("discount_mode")
+  discountRate Decimal      @default(0) @map("discount_rate") @db.Decimal(18, 4)
+  discount     Decimal      @default(0) @db.Decimal(18, 4)
+  lineTotal    Decimal      @map("line_total") @db.Decimal(18, 4)
+  nrvRelease   Decimal      @default(0) @map("nrv_release") @db.Decimal(18, 4)
+  sortOrder    Int          @map("sort_order")
+
+  invoice SalesInvoice @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Cascade)
+  product Product      @relation(fields: [companyId, productId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("sales_invoice_lines")
+}
+
+/// Point-in-time IAS 2 measurement: carrying amount is the lower of weighted-average cost and net realizable value.
+model InventoryAssessment {
+  id              String   @id @default(cuid())
+  companyId       String   @map("company_id")
+  reference       String
+  transactionDate DateTime @map("transaction_date") @db.Date
+  currency        Currency
+  fxRate          Decimal? @map("fx_rate") @db.Decimal(18, 6)
+  notes           String   @default("")
+  employeeId      String   @map("employee_id")
+  locationId      String?  @map("location_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee Membership                @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location Location?                 @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  lines    InventoryAssessmentLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, transactionDate])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("inventory_assessments")
+}
+
+model InventoryAssessmentLine {
+  id              String  @id @default(cuid())
+  companyId       String  @map("company_id")
+  assessmentId    String  @map("assessment_id")
+  productId       String  @map("product_id")
+  quantity        Decimal @db.Decimal(18, 4)
+  unitCost        Decimal @map("unit_cost") @db.Decimal(18, 4)
+  unitNrv         Decimal @map("unit_nrv") @db.Decimal(18, 4)
+  allowanceBefore Decimal @map("allowance_before") @db.Decimal(18, 4)
+  allowanceAfter  Decimal @map("allowance_after") @db.Decimal(18, 4)
+
+  assessment InventoryAssessment @relation(fields: [companyId, assessmentId], references: [companyId, id], onDelete: Cascade)
+  product    Product             @relation(fields: [companyId, productId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([assessmentId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("inventory_assessment_lines")
+}
+
+model SalesInvoicePayment {
+  id         String             @id @default(cuid())
+  companyId  String             @map("company_id")
+  invoiceId  String             @map("invoice_id")
+  incomeId   String             @unique @map("income_id")
+  amount     Decimal            @db.Decimal(18, 4)
+  status     SalesPaymentStatus @default(POSTED)
+  reason     String             @default("")
+  employeeId String             @map("employee_id")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  invoice  SalesInvoice @relation(fields: [companyId, invoiceId], references: [companyId, id])
+  income   Income       @relation(fields: [companyId, incomeId], references: [companyId, id])
+  employee Membership   @relation(fields: [companyId, employeeId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@unique([companyId, incomeId])
+  @@index([companyId, invoiceId])
+  @@index([employeeId])
+  @@map("sales_invoice_payments")
+}
+
+model Supplier {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  phone     String       @default("")
+  address   String       @default("")
+  notes     String       @default("")
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  invoices  PurchaseInvoice[]
+  openItems OpenItem[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@map("suppliers")
+}
+
+/// Commercial purchase. Stock is received only when POSTED. Cash is a separate payment that creates an outcome.
+model PurchaseInvoice {
+  id              String             @id @default(cuid())
+  companyId       String             @map("company_id")
+  number          Int
+  reference       String
+  transactionDate DateTime           @map("transaction_date") @db.Date
+  supplierId      String             @map("supplier_id")
+  supplierName    String             @map("supplier_name")
+  warehouseId     String             @map("warehouse_id")
+  warehouseName   String             @map("warehouse_name")
+  currency        Currency
+  fxRate          Decimal?           @map("fx_rate") @db.Decimal(18, 6)
+  notes           String             @default("")
+  discount        Decimal            @default(0) @db.Decimal(18, 4)
+  subtotal        Decimal            @default(0) @db.Decimal(18, 4)
+  total           Decimal            @default(0) @db.Decimal(18, 4)
+  status          SalesInvoiceStatus @default(DRAFT)
+  employeeId      String             @map("employee_id")
+  locationId      String?            @map("location_id")
+  postedAt        DateTime?          @map("posted_at")
+  voidedAt        DateTime?          @map("voided_at")
+  voidReason      String             @default("") @map("void_reason")
+  voidedById      String?            @map("voided_by_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  supplier  Supplier                 @relation(fields: [companyId, supplierId], references: [companyId, id])
+  warehouse Warehouse                @relation(fields: [companyId, warehouseId], references: [companyId, id])
+  employee  Membership               @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location  Location?                @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  voidedBy  Membership?              @relation("PurchaseVoidedBy", fields: [companyId, voidedById], references: [companyId, id], onDelete: Restrict)
+  lines     PurchaseInvoiceLine[]
+  payments  PurchaseInvoicePayment[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, number])
+  @@unique([companyId, reference])
+  @@unique([companyId, id])
+  @@index([companyId, status, transactionDate])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceLine {
+  id          String      @id @default(cuid())
+  companyId   String      @map("company_id")
+  invoiceId   String      @map("invoice_id")
+  productId   String      @map("product_id")
+  productName String      @map("product_name")
+  sku         String      @default("")
+  unit        ProductUnit
+  quantity    Decimal     @db.Decimal(18, 4)
+  unitPrice   Decimal     @map("unit_price") @db.Decimal(18, 4)
+  discount    Decimal     @default(0) @db.Decimal(18, 4)
+  lineTotal   Decimal     @map("line_total") @db.Decimal(18, 4)
+  sortOrder   Int         @map("sort_order")
+
+  invoice PurchaseInvoice @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Cascade)
+  product Product         @relation(fields: [companyId, productId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("purchase_invoice_lines")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum BudgetStatus {
+  DRAFT
+  ACTIVE
+}
+
+/// Analytical dimension. A center mirrors a project, an office, or stands alone.
+enum CostCenterKind {
+  PROJECT
+  LOCATION
+  MANUAL
+}
+
+model Account {
+  id            String       @id @default(cuid())
+  companyId     String       @map("company_id")
+  code          String
+  name          String
+  type          AccountType
+  status        RecordStatus @default(ACTIVE)
+  system        Boolean      @default(false)
+  /// IFRS presentation line. The reporting engine groups posted balances by this code.
+  statementLine String       @default("") @map("statement_line")
+  parentId      String?      @map("parent_id")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  parent      Account?      @relation("AccountTree", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children    Account[]     @relation("AccountTree")
+  lines       JournalLine[]
+  budgetLines BudgetLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId, type])
+  @@index([parentId])
+  @@map("accounts")
+}
+
+model JournalEntry {
+  id              String        @id @default(cuid())
+  companyId       String        @map("company_id")
+  number          Int
+  transactionDate DateTime      @map("transaction_date") @db.Date
+  description     String        @default("")
+  status          JournalStatus @default(DRAFT)
+  employeeId      String        @map("employee_id")
+  locationId      String?       @map("location_id")
+  reversalOfId    String?       @unique @map("reversal_of_id")
+  sourceType      String?       @map("source_type")
+  sourceId        String?       @map("source_id")
+  sourceKey       String?       @map("source_key")
+  exchange        Boolean       @default(false)
+  postedAt        DateTime?     @map("posted_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  employee   Membership    @relation(fields: [companyId, employeeId], references: [companyId, id])
+  location   Location?     @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  reversalOf JournalEntry? @relation("JournalReversal", fields: [companyId, reversalOfId], references: [companyId, id], onDelete: Restrict)
+  reversedBy JournalEntry? @relation("JournalReversal")
+  lines      JournalLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  /// Per company: year-close keys (YEAR_CLOSE:<year>) repeat across companies.
+  @@unique([companyId, sourceKey])
+  @@unique([companyId, reversalOfId])
+  @@index([companyId, status, transactionDate])
+  @@index([employeeId])
+  @@index([locationId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id           String   @id @default(cuid())
+  companyId    String   @map("company_id")
+  entryId      String   @map("entry_id")
+  accountId    String   @map("account_id")
+  currency     Currency
+  debit        Decimal  @default(0) @db.Decimal(18, 4)
+  credit       Decimal  @default(0) @db.Decimal(18, 4)
+  memo         String   @default("")
+  sortOrder    Int      @map("sort_order")
+  /// Office dimension. Mandatory on income and expense lines (enforced by trigger journal_lines_center_guard).
+  costCenterId String?  @map("cost_center_id")
+  /// Project dimension. Independent from the office so both profitability views stay correct.
+  projectId    String?  @map("project_id")
+  fxRate       Decimal? @map("fx_rate") @db.Decimal(18, 6)
+
+  entry      JournalEntry @relation(fields: [companyId, entryId], references: [companyId, id], onDelete: Cascade)
+  account    Account      @relation(fields: [companyId, accountId], references: [companyId, id])
+  costCenter CostCenter?  @relation(fields: [companyId, costCenterId], references: [companyId, id], onDelete: Restrict)
+  project    Project?     @relation(fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([entryId])
+  @@index([accountId])
+  @@index([costCenterId])
+  @@index([projectId])
+  @@index([companyId])
+  @@map("journal_lines")
+}
+
+model CostCenter {
+  id         String         @id @default(cuid())
+  companyId  String         @map("company_id")
+  code       String
+  name       String
+  kind       CostCenterKind
+  status     RecordStatus   @default(ACTIVE)
+  projectId  String?        @unique @map("project_id")
+  locationId String?        @unique @map("location_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  project  Project?      @relation(fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict)
+  location Location?     @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  lines    JournalLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@unique([companyId, id])
+  @@unique([companyId, projectId])
+  @@unique([companyId, locationId])
+  @@index([companyId, status])
+  @@map("cost_centers")
+}
+
+model PurchaseInvoicePayment {
+  id         String             @id @default(cuid())
+  companyId  String             @map("company_id")
+  invoiceId  String             @map("invoice_id")
+  outcomeId  String             @unique @map("outcome_id")
+  amount     Decimal            @db.Decimal(18, 4)
+  status     SalesPaymentStatus @default(POSTED)
+  reason     String             @default("")
+  employeeId String             @map("employee_id")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  invoice  PurchaseInvoice @relation(fields: [companyId, invoiceId], references: [companyId, id])
+  outcome  Outcome         @relation(fields: [companyId, outcomeId], references: [companyId, id])
+  employee Membership      @relation(fields: [companyId, employeeId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@unique([companyId, outcomeId])
+  @@index([companyId, invoiceId])
+  @@index([employeeId])
+  @@map("purchase_invoice_payments")
+}
+
+model AccountingPolicy {
+  id                 String   @id @default(cuid())
+  companyId          String   @unique @map("company_id")
+  functionalCurrency Currency @default(USD) @map("functional_currency")
+  inventoryMethod    String   @default("WAC") @map("inventory_method")
+  functionalLocked   Boolean  @default(false) @map("functional_locked")
+  openingLocked      Boolean  @default(false) @map("opening_locked")
+  inventoryLocked    Boolean  @default(false) @map("inventory_locked")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@map("accounting_policies")
+}
+
+/// End-of-day remeasurement of the open foreign-currency position.
+model FxRevaluation {
+  id           String   @id @default(cuid())
+  companyId    String   @map("company_id")
+  asOf         DateTime @map("as_of") @db.Date
+  rate         Decimal  @db.Decimal(18, 6)
+  functional   Currency
+  foreignQty   Decimal  @map("foreign_qty") @db.Decimal(18, 4)
+  carrying     Decimal  @db.Decimal(18, 4)
+  closingValue Decimal  @map("closing_value") @db.Decimal(18, 4)
+  gain         Decimal  @db.Decimal(18, 4)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, asOf])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("fx_revaluations")
+}
+
+model FiscalYear {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  year      Int
+  status    PeriodStatus @default(OPEN)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  periods FiscalPeriod[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, year])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("fiscal_years")
+}
+
+model FiscalPeriod {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  yearId    String       @map("year_id")
+  year      Int
+  month     Int
+  startsOn  DateTime     @map("starts_on") @db.Date
+  endsOn    DateTime     @map("ends_on") @db.Date
+  status    PeriodStatus @default(OPEN)
+  closedAt  DateTime?    @map("closed_at")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  yearRecord FiscalYear @relation(fields: [companyId, yearId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, year, month])
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@map("fiscal_periods")
+}
+
+model Budget {
+  id        String       @id @default(cuid())
+  companyId String       @map("company_id")
+  name      String
+  year      Int
+  currency  Currency
+  status    BudgetStatus @default(DRAFT)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  lines BudgetLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, year, currency, name])
+  @@unique([companyId, id])
+  @@index([companyId, year])
+  @@map("budgets")
+}
+
+model BudgetLine {
+  id        String  @id @default(cuid())
+  companyId String  @map("company_id")
+  budgetId  String  @map("budget_id")
+  accountId String  @map("account_id")
+  month     Int
+  amount    Decimal @db.Decimal(18, 4)
+
+  budget  Budget  @relation(fields: [companyId, budgetId], references: [companyId, id], onDelete: Cascade)
+  account Account @relation(fields: [companyId, accountId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([budgetId, accountId, month])
+  @@unique([companyId, id])
+  @@index([accountId])
+  @@index([companyId])
+  @@map("budget_lines")
+}
+
+/// ISO catalog. Activation decides what can be used. The base currency lives on AccountingPolicy.
+model CompanyCurrency {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  code      String
+  name      String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@unique([companyId, id])
+  @@index([companyId, active])
+  @@map("company_currencies")
+}
+
+/// Rate saved for one calendar day. For the USD/SYP pair the number is Syrian pounds per one dollar.
+model DailyRate {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  code      String
+  rateDate  DateTime @map("rate_date") @db.Date
+  rate      Decimal  @db.Decimal(18, 6)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code, rateDate])
+  @@unique([companyId, id])
+  @@index([companyId, rateDate])
+  @@map("daily_rates")
+}
+
+enum OpenItemParty {
+  CUSTOMER
+  SUPPLIER
+  BORROWER
+}
+
+enum OpenItemKind {
+  RECEIVABLE
+  PAYABLE
+  ADVANCE_IN
+  ADVANCE_OUT
+  /// Borrower custody: cash handed to a borrower and not yet spent. Control account 1300.
+  CUSTODY
+}
+
+enum SettlementMode {
+  CASH
+  GOODS
+}
+
+enum OpenItemStatus {
+  OPEN
+  CLOSED
+}
+
+model OpenItem {
+  id             String         @id @default(cuid())
+  companyId      String         @map("company_id")
+  party          OpenItemParty
+  customerId     String?        @map("customer_id")
+  supplierId     String?        @map("supplier_id")
+  borrowerId     String?        @map("borrower_id")
+  /// Office and employee that created the item. Used to scope borrower custody the same way operations are scoped.
+  locationId     String?        @map("location_id")
+  employeeId     String?        @map("employee_id")
+  partyName      String         @map("party_name")
+  kind           OpenItemKind
+  documentDate   DateTime       @map("document_date") @db.Date
+  dueDate        DateTime?      @map("due_date") @db.Date
+  currency       Currency
+  fxRate         Decimal?       @map("fx_rate") @db.Decimal(18, 6)
+  originalAmount Decimal        @map("original_amount") @db.Decimal(18, 4)
+  remaining      Decimal        @db.Decimal(18, 4)
+  settlementMode SettlementMode @default(CASH) @map("settlement_mode")
+  sourceType     String         @map("source_type")
+  sourceId       String         @default("") @map("source_id")
+  reference      String         @default("")
+  memo           String         @default("")
+  status         OpenItemStatus @default(OPEN)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  customer    Customer?            @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  supplier    Supplier?            @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
+  borrower    Borrower?            @relation(fields: [companyId, borrowerId], references: [companyId, id], onDelete: Restrict)
+  location    Location?            @relation(fields: [companyId, locationId], references: [companyId, id], onDelete: Restrict)
+  employee    Membership?          @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Restrict)
+  allocations OpenItemAllocation[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, party, status])
+  @@index([companyId, kind])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([borrowerId, currency, status])
+  @@index([companyId, sourceType, sourceId])
+  @@map("open_items")
+}
+
+model OpenItemAllocation {
+  id               String   @id @default(cuid())
+  companyId        String   @map("company_id")
+  openItemId       String   @map("open_item_id")
+  amount           Decimal  @db.Decimal(18, 4)
+  settlementFxRate Decimal? @map("settlement_fx_rate") @db.Decimal(18, 6)
+  fxDifference     Decimal  @default(0) @map("fx_difference") @db.Decimal(18, 4)
+  sourceType       String   @map("source_type")
+  sourceId         String   @default("") @map("source_id")
+  memo             String   @default("")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  openItem OpenItem @relation(fields: [companyId, openItemId], references: [companyId, id], onDelete: Cascade)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([openItemId])
+  @@index([companyId, sourceType, sourceId])
+  @@map("open_item_allocations")
+}
+
+model OpeningEntry {
+  id          String    @id @default(cuid())
+  companyId   String    @unique @map("company_id")
+  balanceDate DateTime  @map("balance_date") @db.Date
+  entryDate   DateTime  @map("entry_date") @db.Date
+  allowance   Decimal   @default(0) @db.Decimal(18, 4)
+  reference   String    @default("")
+  employeeId  String    @map("employee_id")
+  postedAt    DateTime? @map("posted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  employee Membership           @relation(fields: [companyId, employeeId], references: [companyId, id])
+  accounts OpeningAccountLine[]
+  stock    OpeningStockLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([employeeId])
+  @@map("opening_entries")
+}
+
+model OpeningAccountLine {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  entryId   String   @map("entry_id")
+  code      String
+  currency  Currency
+  debit     Decimal  @default(0) @db.Decimal(18, 4)
+  credit    Decimal  @default(0) @db.Decimal(18, 4)
+  memo      String   @default("")
+  sortOrder Int      @map("sort_order")
+
+  entry OpeningEntry @relation(fields: [companyId, entryId], references: [companyId, id], onDelete: Cascade)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([entryId])
+  @@index([companyId])
+  @@map("opening_account_lines")
+}
+
+model OpeningStockLine {
+  id          String  @id @default(cuid())
+  companyId   String  @map("company_id")
+  entryId     String  @map("entry_id")
+  productId   String  @map("product_id")
+  warehouseId String  @map("warehouse_id")
+  quantity    Decimal @db.Decimal(18, 4)
+  unitCost    Decimal @default(0) @map("unit_cost") @db.Decimal(18, 4)
+
+  entry     OpeningEntry @relation(fields: [companyId, entryId], references: [companyId, id], onDelete: Cascade)
+  product   Product      @relation(fields: [companyId, productId], references: [companyId, id])
+  warehouse Warehouse    @relation(fields: [companyId, warehouseId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([entryId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("opening_stock_lines")
+}
+
+enum LeadStatus {
+  OPEN
+  CONVERTED
+  LOST
+}
+
+enum OpportunityStage {
+  NEW
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum ActivityType {
+  CALL
+  MEETING
+  TASK
+}
+
+enum ActivityStatus {
+  OPEN
+  DONE
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Lead {
+  id          String     @id @default(cuid())
+  companyId   String     @map("company_id")
+  name        String
+  phone       String     @default("")
+  address     String     @default("")
+  notes       String     @default("")
+  status      LeadStatus @default(OPEN)
+  ownerId     String     @map("owner_id")
+  customerId  String?    @map("customer_id")
+  convertedAt DateTime?  @map("converted_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  owner      Membership @relation("LeadOwner", fields: [companyId, ownerId], references: [companyId, id])
+  customer   Customer?  @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  activities Activity[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@index([ownerId])
+  @@index([customerId])
+  @@map("leads")
+}
+
+model Opportunity {
+  id             String           @id @default(cuid())
+  companyId      String           @map("company_id")
+  customerId     String           @map("customer_id")
+  title          String
+  stage          OpportunityStage @default(NEW)
+  expectedAmount Decimal          @default(0) @map("expected_amount") @db.Decimal(18, 4)
+  probability    Int              @default(0)
+  currency       Currency         @default(USD)
+  ownerId        String           @map("owner_id")
+  closeDate      DateTime?        @map("close_date") @db.Date
+  lossReason     String           @default("") @map("loss_reason")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  customer   Customer   @relation(fields: [companyId, customerId], references: [companyId, id])
+  owner      Membership @relation("OpportunityOwner", fields: [companyId, ownerId], references: [companyId, id])
+  activities Activity[]
+  quotes     Quote[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, stage])
+  @@index([customerId])
+  @@index([ownerId])
+  @@map("opportunities")
+}
+
+model Activity {
+  id            String         @id @default(cuid())
+  companyId     String         @map("company_id")
+  type          ActivityType
+  title         String
+  dueAt         DateTime       @map("due_at")
+  status        ActivityStatus @default(OPEN)
+  notes         String         @default("")
+  ownerId       String         @map("owner_id")
+  customerId    String?        @map("customer_id")
+  leadId        String?        @map("lead_id")
+  opportunityId String?        @map("opportunity_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  owner       Membership   @relation("ActivityOwner", fields: [companyId, ownerId], references: [companyId, id])
+  customer    Customer?    @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  lead        Lead?        @relation(fields: [companyId, leadId], references: [companyId, id], onDelete: Restrict)
+  opportunity Opportunity? @relation(fields: [companyId, opportunityId], references: [companyId, id], onDelete: Restrict)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([companyId, status, dueAt])
+  @@index([ownerId])
+  @@index([customerId])
+  @@map("activities")
+}
+
+model Quote {
+  id             String      @id @default(cuid())
+  companyId      String      @map("company_id")
+  number         Int
+  version        Int         @default(1)
+  parentId       String?     @map("parent_id")
+  customerId     String      @map("customer_id")
+  opportunityId  String?     @map("opportunity_id")
+  status         QuoteStatus @default(DRAFT)
+  currency       Currency
+  fxRate         Decimal?    @map("fx_rate") @db.Decimal(18, 6)
+  validUntil     DateTime?   @map("valid_until") @db.Date
+  notes          String      @default("")
+  subtotal       Decimal     @default(0) @db.Decimal(18, 4)
+  discount       Decimal     @default(0) @db.Decimal(18, 4)
+  total          Decimal     @default(0) @db.Decimal(18, 4)
+  employeeId     String      @map("employee_id")
+  salesInvoiceId String?     @unique @map("sales_invoice_id")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  parent       Quote?        @relation("QuoteVersions", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  versions     Quote[]       @relation("QuoteVersions")
+  customer     Customer      @relation(fields: [companyId, customerId], references: [companyId, id])
+  opportunity  Opportunity?  @relation(fields: [companyId, opportunityId], references: [companyId, id], onDelete: Restrict)
+  employee     Membership    @relation(fields: [companyId, employeeId], references: [companyId, id])
+  salesInvoice SalesInvoice? @relation(fields: [companyId, salesInvoiceId], references: [companyId, id], onDelete: Restrict)
+  lines        QuoteLine[]
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, number, version])
+  @@unique([companyId, id])
+  @@unique([companyId, salesInvoiceId])
+  @@index([companyId, status])
+  @@index([customerId])
+  @@index([employeeId])
+  @@index([opportunityId])
+  @@map("quotes")
+}
+
+model QuoteLine {
+  id          String      @id @default(cuid())
+  companyId   String      @map("company_id")
+  quoteId     String      @map("quote_id")
+  productId   String      @map("product_id")
+  productName String      @map("product_name")
+  sku         String      @default("")
+  unit        ProductUnit
+  quantity    Decimal     @db.Decimal(18, 4)
+  unitPrice   Decimal     @map("unit_price") @db.Decimal(18, 4)
+  discount    Decimal     @default(0) @db.Decimal(18, 4)
+  lineTotal   Decimal     @map("line_total") @db.Decimal(18, 4)
+  sortOrder   Int         @map("sort_order")
+
+  quote   Quote   @relation(fields: [companyId, quoteId], references: [companyId, id], onDelete: Cascade)
+  product Product @relation(fields: [companyId, productId], references: [companyId, id])
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, id])
+  @@index([quoteId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("quote_lines")
 }
