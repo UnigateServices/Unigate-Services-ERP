@@ -83,6 +83,57 @@ describe('finance schema (phase F2)', () => {
     }
   });
 
+  it('makes every finance link composite with the company, cascading only from parents to their lines', async () => {
+    const keys = await prisma.$queryRaw<{ table: string; target: string; columns: string[]; on_delete: string }[]>`
+      SELECT t.relname AS table, r.relname AS target, c.confdeltype::text AS on_delete,
+             array(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(n, i)
+                   JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n ORDER BY k.i) AS columns
+      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_class r ON r.oid = c.confrelid
+      WHERE c.contype = 'f' AND t.relnamespace = 'public'::regnamespace`;
+    const finance = keys.filter((key) => !FOUNDATION_TABLES.includes(key.table));
+    const links = finance.filter((key) => key.target !== 'companies');
+    expect(links.length).toBeGreaterThan(90);
+    for (const key of links) {
+      expect({ key: `${key.table} -> ${key.target}`, columns: key.columns.length, first: key.columns[0] }).toEqual({
+        key: `${key.table} -> ${key.target}`,
+        columns: 2,
+        first: 'company_id',
+      });
+    }
+    const cascading = links
+      .filter((key) => key.on_delete === 'c')
+      .map((key) => `${key.table} -> ${key.target}`)
+      .sort();
+    expect(cascading).toEqual([
+      'budget_lines -> budgets',
+      'inventory_assessment_lines -> inventory_assessments',
+      'journal_lines -> journal_entries',
+      'open_item_allocations -> open_items',
+      'opening_account_lines -> opening_entries',
+      'opening_stock_lines -> opening_entries',
+      'purchase_invoice_lines -> purchase_invoices',
+      'quote_lines -> quotes',
+      'sales_invoice_lines -> sales_invoices',
+    ]);
+    // Everything else refuses deletes that would orphan a row (no SET NULL, which would clear company_id).
+    expect(links.filter((key) => key.on_delete !== 'c' && key.on_delete !== 'r')).toEqual([]);
+  });
+
+  it('keeps journal source keys unique per company, so each company can close the same year', async () => {
+    const a = await tenant('alpha');
+    const b = await tenant('beta');
+    const entry = (t: typeof a, number: number) => ({
+      companyId: t.companyId,
+      number,
+      transactionDate: new Date('2026-12-31T00:00:00.000Z'),
+      employeeId: t.membershipId,
+      sourceKey: 'YEAR_CLOSE:2026',
+    });
+    await prisma.journalEntry.create({ data: entry(a, 1) });
+    await prisma.journalEntry.create({ data: entry(b, 1) });
+    await expect(prisma.journalEntry.create({ data: entry(a, 2) })).rejects.toThrow(/Unique constraint/);
+  });
+
   it('accepts an operation that stays inside one company', async () => {
     const a = await tenant('alpha');
     const row = await prisma.income.create({ data: income(a, 'INC-1') });
@@ -182,7 +233,7 @@ describe('finance schema (phase F2)', () => {
     await prisma.product.create({ data: { companyId: a.companyId, name: 'One', sku: 'S1', barcode: '123' } });
     await expect(
       prisma.product.create({ data: { companyId: a.companyId, name: 'Two', sku: 'S2', barcode: '123' } }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Unique constraint failed on the fields: \(`company_id`,`barcode`\)/);
     await prisma.product.create({ data: { companyId: b.companyId, name: 'One', sku: 'S1', barcode: '123' } });
     await prisma.product.create({ data: { companyId: a.companyId, name: 'Three', sku: 'S3' } });
     await prisma.product.create({ data: { companyId: a.companyId, name: 'Four', sku: 'S4' } });

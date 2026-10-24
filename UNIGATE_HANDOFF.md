@@ -420,14 +420,20 @@ Open follow-ups from the F1 review (for phase 11 or later):
 - `employee_id`, `requester_id`, `supervisor_id`, `voided_by_id`, and `owner_id` now reference `memberships` (decision A). Names are unchanged. `location_id` references the foundation `locations`.
 - Optional relations are `ON DELETE RESTRICT` (SET NULL on a composite key would clear `company_id`).
 - Dropped from finance: `Employee`, the finance `Location`, `enum Role`, and the duplicate `enum RecordStatus`.
-- Checks: `prisma validate` OK; `migrate deploy` on an empty database and on the development database OK; `prisma migrate diff` from the migrated database to the schema: no difference; `tsc` API and web, `nest build`, `next build` OK; `npm run test:api` 15 suites, 87 tests (8 new in `apps/api/src/finance/finance-schema.spec.ts`).
+- The independent review found no fidelity or isolation defect. Its one schema finding, the global `sourceKey` unique, is fixed. Its four delete findings are F3 work (note 2).
+- Checks: `prisma validate` OK; `migrate deploy` on an empty database and on the development database OK; `prisma migrate diff` from the migrated database to the schema: no difference; `tsc` API and web, `nest build`, `next build` OK; `npm run test:api` 15 suites, 89 tests (10 new in `apps/api/src/finance/finance-schema.spec.ts`, including a sweep that every finance link is composite and only parent-to-line links cascade).
 
 Notes for F3 (moving the finance code):
 
 1. Every branch needs its office cost center (`cost_centers.kind = LOCATION`). The finance app created them for its own locations; branches are now created by the foundation, so F3 must create or ensure them.
-2. Finance deletes are guarded by usage counts, and links are now `RESTRICT`. Project delete does not count journal lines or the cost center; F3 must count them (or deactivate) so a delete never hits a key error.
+2. Finance deletes are guarded by usage counts, and links are now `RESTRICT` where the original silently set them to null. F3 must count these too (and deactivate instead of deleting), or the delete hits a key error. Found by the F2 review, each confirmed in SQL:
+   - customer: `leads`, `activities`, and `open_items` (`sales.service.ts` counts only invoices);
+   - project: `cost_centers` (one is created for every project by `syncCostCenters`) and `journal_lines` (`projects.service.ts` counts incomes, outcomes, advances);
+   - draft sales invoice created from a quote: `quotes.sales_invoice_id` (clear the quote link in the same transaction);
+   - bank: `advances` (`banks.service.ts` does not count them).
 3. `createMany` on line tables (for example `openingAccountLine.createMany`) must now pass `companyId`.
 4. `employee` relations now return a `Membership`; the display name is `membership.user.name`. API responses must keep their old shape (`{ name }`) so the F0 scenario matches.
+5. `JournalEntry.sourceKey` is unique per company (`@@unique([companyId, sourceKey])`), not globally: year-close keys (`YEAR_CLOSE:<year>`) repeat across companies. Lookups by `sourceKey` (`post-source.ts`, `statements.service.ts`) must use `companyId_sourceKey`.
 
 ## Working method
 

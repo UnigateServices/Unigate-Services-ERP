@@ -1341,9 +1341,6 @@ CREATE UNIQUE INDEX "accounts_company_id_id_key" ON "accounts"("company_id", "id
 CREATE UNIQUE INDEX "journal_entries_reversal_of_id_key" ON "journal_entries"("reversal_of_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "journal_entries_source_key_key" ON "journal_entries"("source_key");
-
--- CreateIndex
 CREATE INDEX "journal_entries_company_id_status_transaction_date_idx" ON "journal_entries"("company_id", "status", "transaction_date");
 
 -- CreateIndex
@@ -1357,6 +1354,9 @@ CREATE UNIQUE INDEX "journal_entries_company_id_number_key" ON "journal_entries"
 
 -- CreateIndex
 CREATE UNIQUE INDEX "journal_entries_company_id_id_key" ON "journal_entries"("company_id", "id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "journal_entries_company_id_source_key_key" ON "journal_entries"("company_id", "source_key");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "journal_entries_company_id_reversal_of_id_key" ON "journal_entries"("company_id", "reversal_of_id");
@@ -2041,6 +2041,8 @@ ALTER TABLE "quote_lines" ADD CONSTRAINT "quote_lines_company_id_product_id_fkey
 
 -- AddForeignKey
 ALTER TABLE "quote_lines" ADD CONSTRAINT "quote_lines_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "companies"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+
 
 -- ===== Hand-written rules carried over from the finance migrations (Prisma does not model them) =====
 

@@ -1302,7 +1302,7 @@ model JournalEntry {
   reversalOfId    String?       @unique @map("reversal_of_id")
   sourceType      String?       @map("source_type")
   sourceId        String?       @map("source_id")
-  sourceKey       String?       @unique @map("source_key")
+  sourceKey       String?       @map("source_key")
   exchange        Boolean       @default(false)
   postedAt        DateTime?     @map("posted_at")
   createdAt       DateTime      @default(now()) @map("created_at")
@@ -1318,6 +1318,8 @@ model JournalEntry {
 
   @@unique([companyId, number])
   @@unique([companyId, id])
+  /// Per company: year-close keys (YEAR_CLOSE:<year>) repeat across companies.
+  @@unique([companyId, sourceKey])
   @@unique([companyId, reversalOfId])
   @@index([companyId, status, transactionDate])
   @@index([employeeId])
