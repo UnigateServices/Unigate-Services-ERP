@@ -24,7 +24,11 @@ Continuation document for a new Agent. It describes the repository after Phases 
 
 **Changed on 23 October 2026:** the finance owner handed over commit `77ce653` and stopped. The user and Claude do the whole merge (F0 to F5). There is no separate preparation in `Reference/erp-finance/`; the conversions happen while moving code in F3 (`docs/FINANCE_MERGE_PLAN.md` section 4).
 
-**Implemented, waiting for acceptance:** phase F0 (finance safety net), on branch `phase-f0-finance-baseline`. `tools/finance-baseline/scenario.mjs` runs a fixed set of finance operations and records every computed number; `tools/finance-baseline/baseline/original.json` holds the original app's numbers. Every F3 batch must reproduce them. Accounting observations for the manager are in `docs/FINANCE_REVIEW_NOTES.md`; do not change finance behavior during the merge.
+**Accepted and merged:** phase F0 (finance safety net), pull request #10.
+
+**Implemented, waiting for acceptance:** phase F2 (finance tables in the foundation database), on branch `phase-f2-finance-schema`. See "Phase F2" below.
+
+**F0 details:** `tools/finance-baseline/scenario.mjs` runs a fixed set of finance operations and records every computed number; `tools/finance-baseline/baseline/original.json` holds the original app's numbers. Every F3 batch must reproduce them. Accounting observations for the manager are in `docs/FINANCE_REVIEW_NOTES.md`; do not change finance behavior during the merge.
 
 **Approved, not started:** phases F2 to F5 in `docs/FINANCE_MERGE_PLAN.md` (finance owner). Do not start one until the user explicitly says so.
 
@@ -219,7 +223,7 @@ The API TypeScript module mode is `commonjs`. TRADIVIA's API uses `nodenext`. Th
 
 Schema: `uni-gate/packages/database/prisma/schema.prisma`.
 
-Models: `User`, `Company`, `Location`, `Role`, `RolePermission`, `Membership`, `CompanyModule`, `AuditEntry`.
+Foundation models: `User`, `Company`, `Location`, `Role`, `RolePermission`, `Membership`, `CompanyModule`, `AuditEntry`. Finance models (46) follow in the same file since phase F2.
 
 `User.name` is the display name. It is not a login name. Platform login uses `User.username`. Customer login uses `Membership.username`.
 
@@ -229,6 +233,7 @@ Migrations, in order:
 2. `20261004180000_membership_company_integrity`
 3. `20261005093000_user_display_name`
 4. `20261023090000_role_permissions` (phase F1)
+5. `20261024100000_finance_schema` (phase F2)
 
 No finance tables. After the Phase 2 cleanup, local `unigate` held only the development seed: companies `tradivia`, `ofoq`, `expired`, and `lastday`, plus their roles, locations, and users. Re-run `npm run db:seed:dev` on a later calendar day so `lastday` stays that day and `expired` stays the day before.
 
@@ -405,6 +410,24 @@ Open follow-ups from the F1 review (for phase 11 or later):
 - The independent review found a takeover path (a manager-made users-only role could reset or deactivate the general manager), two lockout paths (including a race), and approval flags not being capped. All four are fixed, with tests, and the reviewer's own probe now gets 403 or 409 in every case.
 - Web: `/app/branches` and `/app/roles` create and edit through the new routes. The permission matrix offers a member only the levels they hold. Their own role and roles above them open read-only with a note.
 - Tests: `roles/company-admin.spec.ts` (10 tests). `npm run test:api`: 14 suites, 79 tests passed. `tsc --noEmit`, `nest build`, and `next build` pass.
+
+## Phase F2: finance tables in the foundation database (24 October 2026)
+
+- The 46 finance tables and 28 finance enums are now in `uni-gate/packages/database/prisma/schema.prisma`, after the line `===== Finance module (phase F2) =====`. They were generated from `Reference/erp-finance` (77ce653) by `tools/finance-schema/transform.py` and `assemble.py`, and are owned here from now on (edit the schema, not the tools).
+- Migration `20261024100000_finance_schema`: new types, tables, indexes, and keys only. No foundation table changes. It also carries the two hand-written rules from the finance migrations: the partial unique index `products_company_barcode_key` and the trigger `journal_lines_center_guard` (`COST_CENTER_REQUIRED`).
+- Every finance table has `company_id` (not null, no default), a key to `companies`, and a unique `(company_id, id)`. Line tables that had no `company_id` (invoice, quote, journal, budget, opening, assessment lines) now have one.
+- Every relation is composite `(company_id, x_id) -> (company_id, id)`. A row can never point at a row of another company; PostgreSQL refuses it. Prisma fills `company_id` on nested line creates from the parent, so `lines: { create: [{ productId, ... }] }` keeps working.
+- `employee_id`, `requester_id`, `supervisor_id`, `voided_by_id`, and `owner_id` now reference `memberships` (decision A). Names are unchanged. `location_id` references the foundation `locations`.
+- Optional relations are `ON DELETE RESTRICT` (SET NULL on a composite key would clear `company_id`).
+- Dropped from finance: `Employee`, the finance `Location`, `enum Role`, and the duplicate `enum RecordStatus`.
+- Checks: `prisma validate` OK; `migrate deploy` on an empty database and on the development database OK; `prisma migrate diff` from the migrated database to the schema: no difference; `tsc` API and web, `nest build`, `next build` OK; `npm run test:api` 15 suites, 87 tests (8 new in `apps/api/src/finance/finance-schema.spec.ts`).
+
+Notes for F3 (moving the finance code):
+
+1. Every branch needs its office cost center (`cost_centers.kind = LOCATION`). The finance app created them for its own locations; branches are now created by the foundation, so F3 must create or ensure them.
+2. Finance deletes are guarded by usage counts, and links are now `RESTRICT`. Project delete does not count journal lines or the cost center; F3 must count them (or deactivate) so a delete never hits a key error.
+3. `createMany` on line tables (for example `openingAccountLine.createMany`) must now pass `companyId`.
+4. `employee` relations now return a `Membership`; the display name is `membership.user.name`. API responses must keep their old shape (`{ name }`) so the F0 scenario matches.
 
 ## Working method
 
